@@ -1,7 +1,7 @@
 "use client";
 
 import { useFrame } from "@react-three/fiber";
-import { Text } from "@react-three/drei";
+import { Text, Sparkles } from "@react-three/drei";
 import { useRef, forwardRef } from "react";
 import * as THREE from "three";
 
@@ -169,6 +169,29 @@ export const MaverichJet = forwardRef<THREE.Group, Props>(function MaverichJet(
       >
         M
       </Text>
+
+      {/* Wingtip vapor vortices — amber-tinted Sparkles emitting from each
+          wingtip. Low count so they read as wisps, not fog. Active during
+          the pass-over; the parent scene does not toggle visibility — the
+          opacity falls off naturally as the camera leaves the close-up. */}
+      <Sparkles
+        position={[-2.85, -0.05, -0.4]}
+        count={30}
+        scale={[0.6, 0.3, 1.4]}
+        size={2}
+        speed={0.4}
+        color="#F5C97D"
+        opacity={0.7}
+      />
+      <Sparkles
+        position={[2.85, -0.05, -0.4]}
+        count={30}
+        scale={[0.6, 0.3, 1.4]}
+        size={2}
+        speed={0.4}
+        color="#F5C97D"
+        opacity={0.7}
+      />
     </group>
   );
 });
