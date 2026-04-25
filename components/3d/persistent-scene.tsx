@@ -1,7 +1,7 @@
 "use client";
 
 import { useFrame, useThree } from "@react-three/fiber";
-import { Environment, PerspectiveCamera } from "@react-three/drei";
+import { PerspectiveCamera } from "@react-three/drei";
 import {
   Bloom,
   DepthOfField,
@@ -467,12 +467,6 @@ export function PersistentScene() {
           for the same animation, which would be a hook-immutability
           violation. */}
       <fog ref={fogRef} attach="fog" args={["#7A8C9C", 35, 240]} />
-
-      {/* HDRI sunset environment — global IBL. background={false} keeps
-          our shader sky as the visible sky; env only contributes lighting
-          and reflections. environmentIntensity holds steady; the canyon
-          fade handles the visual transition. */}
-      <Environment preset="sunset" background={false} environmentIntensity={0.7} />
 
       {/* Faint warm fill so shadow valleys never go fully black. */}
       <ambientLight intensity={0.12} color="#34404C" />
