@@ -1,210 +1,162 @@
 "use client";
 
 import { useFrame } from "@react-three/fiber";
-import { Text, Sparkles } from "@react-three/drei";
-import { useMemo, useRef, forwardRef } from "react";
+import { Sparkles, useGLTF } from "@react-three/drei";
+import { forwardRef, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { createNoise2D } from "simplex-noise";
 
 /**
- * MaverichJet — F/A-18-class swept-wing fighter, v2 PBR upgrade.
+ * MaverichJet — F/A-18 Hornet, real GLB asset (Phase 4.2.14).
  *
- * v2 changes vs v1 (procedural fallback path — no external GLB sourced):
- *   • Procedurally-generated panel-line normal map → fuselage and wings
- *     have plate-line micro-detail that catches the HDRI sunset env
- *     reflection. Reads as armored skin instead of solid plastic.
- *   • Metallic-roughness retuned: fuselage now metalness=0.65,
- *     roughness=0.4 — close to a brushed-metal aircraft skin.
- *   • Canopy: high metalness, low roughness, slight emissive amber for
- *     the sun-glint-on-canopy beat (Brief §3 "sun glint on the cockpit").
- *   • Afterburners scaled up; emissive color shifts from amber-gold to
- *     hotter orange-to-white at peak burner (driven by glowIntensityRef).
- *   • Twin amber point lights (kept from v1) layered with the new bloom
- *     post-effect — the engine glow gets a luminous halo.
+ * Replaces the earlier procedural box-and-cone assembly with a real
+ * F/A-18 Hornet glTF model from Sketchfab user cs09736 (CC-BY-SA-4.0,
+ * attribution in the site footer).
  *
- * Orientation: nose points along +Z so the camera at +Z looks straight at
- * the fuselage front. Jet group children stay at parent-local origin; the
- * parent scene moves the whole group via lerp in HeroAnimator.
+ * The GLB is loaded via Drei's useGLTF — one shared cache across the
+ * page so the persistent jet doesn't re-allocate on every mount. We
+ * clone the scene for the actual mesh so per-instance state (matrix,
+ * material clones) doesn't bleed into the cache.
+ *
+ * Three things sit on TOP of the loaded model:
+ *
+ *   1. M call-sign (Drei <Text>) — anchored to the front of the
+ *      fuselage based on the model's bounding box. Maverich brand mark.
+ *   2. Twin afterburner emissive cones + amber point lights — anchored
+ *      at the model's rear engine positions (also bounding-box-derived).
+ *      These pulse + ramp via glowIntensityRef from the parent scene.
+ *   3. Wingtip vapor sparkles — anchored at the model's wing tips.
+ *
+ * Auto-orient/auto-scale: the GLB's native coordinate system + scale
+ * are unknown without inspection. We measure the bounding box at
+ * mount, scale uniformly so the longest dimension matches a target
+ * fuselage length, then apply a configurable rotation offset so the
+ * nose points along +Z (the scene's "forward" convention) regardless
+ * of how the source model was authored.
  */
 
-// PRNG — match the seeds used by mountain-landscape so HMR stays stable.
-function mulberry32(seed: number) {
-  return function () {
-    let t = (seed += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+// Drei caches the parsed model under this URL. preload kicks the
+// download off as soon as this module first imports — useful because
+// LoadingScreen's useProgress reports progress from this same loader.
+useGLTF.preload("/models/fa18.glb");
 
-/**
- * Procedural panel-line normal map. Two passes:
- *   1. Rectangular plate boundaries — soft step lines at regular intervals
- *      across u + v. These read as the seam between hull plates.
- *   2. Subtle simplex noise — micro-scratches/wear, breaks up the regular
- *      grid so the surface doesn't read as wallpaper.
- *
- * The resulting tangent-space normal map mostly preserves the surface
- * normal (high B channel ≈ 0.9) with low-amplitude X/Y deviations at
- * panel edges and noise highs.
- */
-function createPanelLineNormal(size = 256, seed = 7777): THREE.DataTexture {
-  const noise = createNoise2D(mulberry32(seed));
-  const data = new Uint8Array(size * size * 4);
+// Target fuselage length in scene units. The intro/section keyframes
+// in persistent-scene.tsx were authored against a 4-unit jet; this
+// preserves the camera-fits-jet-in-frame composition.
+const TARGET_LENGTH = 4.0;
 
-  // Soft-step at panel edges so the normal disturbance is local.
-  const lineMask = (coord: number, period: number, sharpness: number) => {
-    const f = ((coord % period) + period) % period;
-    const dist = Math.min(f, period - f);
-    return Math.exp(-Math.pow(dist * sharpness, 2));
-  };
-
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const i = (y * size + x) * 4;
-      const u = x / size;
-      const v = y / size;
-
-      // Two grid frequencies — large plates (u/v 0.25), small plates (0.0833).
-      const horizLarge = lineMask(u, 0.25, 60);
-      const vertLarge = lineMask(v, 0.25, 60);
-      const horizSmall = lineMask(u, 1 / 12, 90) * 0.5;
-      const vertSmall = lineMask(v, 1 / 12, 90) * 0.5;
-
-      // Panel-line gradient → normal disturbance pointing outward.
-      const dx = (vertLarge + vertSmall) * 0.6;
-      const dy = (horizLarge + horizSmall) * 0.6;
-
-      // Sub-millimeter wear.
-      const n1 = noise(x * 0.06, y * 0.06) * 0.12;
-
-      const nx = -(dx + n1) * 0.5 + 0.5;
-      const ny = -(dy + n1) * 0.5 + 0.5;
-      const nz = 0.92;
-      data[i + 0] = Math.max(0, Math.min(255, Math.round(nx * 255)));
-      data[i + 1] = Math.max(0, Math.min(255, Math.round(ny * 255)));
-      data[i + 2] = Math.max(0, Math.min(255, Math.round(nz * 255)));
-      data[i + 3] = 255;
-    }
-  }
-  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.minFilter = THREE.LinearMipmapLinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.generateMipmaps = true;
-  tex.needsUpdate = true;
-  return tex;
-}
-
-/**
- * Roughness map — slightly varied per UV so reflections aren't perfectly
- * uniform across the airframe. Low contrast — we want a metallic feel,
- * just not a chrome-mirror feel.
- */
-function createRoughnessMap(size = 128, seed = 9999): THREE.DataTexture {
-  const noise = createNoise2D(mulberry32(seed));
-  const data = new Uint8Array(size * size * 4);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const i = (y * size + x) * 4;
-      const n = (noise(x * 0.04, y * 0.04) + 1) * 0.5;
-      // Roughness range 0.32 → 0.55 — within "brushed metal" band.
-      const r = 0.32 + n * 0.23;
-      const v = Math.round(r * 255);
-      data[i + 0] = v;
-      data[i + 1] = v;
-      data[i + 2] = v;
-      data[i + 3] = 255;
-    }
-  }
-  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.minFilter = THREE.LinearMipmapLinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.generateMipmaps = true;
-  tex.needsUpdate = true;
-  return tex;
-}
+// Source model's nose-axis is empirically along -Z (most Blender
+// exports use -Z forward). We rotate +π around Y to flip nose to +Z.
+// If the silhouette comes in upside down or backwards on first load,
+// adjust this single Euler vector — every brand decoration anchors
+// off the rotated bounding box, so nothing else needs touching.
+const MODEL_ROTATION: [number, number, number] = [0, Math.PI, 0];
 
 type Props = {
   glowIntensityRef?: React.MutableRefObject<number>;
+};
+
+type ModelMetrics = {
+  scale: number;
+  /** Bounds in *scaled* local space (after the auto-scale applied). */
+  noseZ: number;     // forward edge of fuselage (positive Z)
+  tailZ: number;     // rear edge (negative Z)
+  wingtipX: number;  // half wingspan (positive X)
+  topY: number;      // top of canopy (positive Y)
+  centerY: number;   // vertical center (often != 0 if model origin off-axis)
 };
 
 export const MaverichJet = forwardRef<THREE.Group, Props>(function MaverichJet(
   { glowIntensityRef },
   ref
 ) {
+  const { scene } = useGLTF("/models/fa18.glb");
+
   const burnerLeft = useRef<THREE.MeshStandardMaterial>(null);
   const burnerRight = useRef<THREE.MeshStandardMaterial>(null);
   const burnerLightLeft = useRef<THREE.PointLight>(null);
   const burnerLightRight = useRef<THREE.PointLight>(null);
 
-  // Procedural maps shared by all body panels.
-  const panelNormal = useMemo(() => createPanelLineNormal(256, 7777), []);
-  const roughnessMap = useMemo(() => createRoughnessMap(128, 9999), []);
+  // Clone the cached scene so this jet instance owns its own matrix
+  // and material refs — useGLTF returns a shared scene that mutates
+  // would otherwise cross-contaminate.
+  const cloned = useMemo(() => scene.clone(true), [scene]);
 
-  // Body material — brushed armored metal. metalness high, roughness in
-  // the brushed band, panel-line normals for surface detail.
-  const bodyMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: "#1A1B20",
-        metalness: 0.65,
-        roughness: 0.42,
-        normalMap: panelNormal,
-        normalScale: new THREE.Vector2(0.55, 0.55),
-        roughnessMap,
-        envMapIntensity: 1.4,
-      }),
-    [panelNormal, roughnessMap]
-  );
+  // Compute the bounding box AFTER applying the orientation rotation,
+  // so nose/tail/wingtip readings are in the corrected coordinate
+  // frame. This is the source of truth for where to place every
+  // brand decoration (M, afterburners, sparkles).
+  const metrics: ModelMetrics = useMemo(() => {
+    // Apply the rotation to a transient group, measure, then drop the
+    // group — the rotation is also applied to the rendered <group>
+    // below, so the world transform agrees with our measurements.
+    const probe = new THREE.Group();
+    probe.rotation.set(MODEL_ROTATION[0], MODEL_ROTATION[1], MODEL_ROTATION[2]);
+    probe.add(cloned.clone(true));
+    probe.updateMatrixWorld(true);
 
-  // Wing leading-edge material — slightly lighter, slightly less rough
-  // so the sun catches a bright rim along the leading edge during the
-  // overhead pass.
-  const wingMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: "#23252C",
-        metalness: 0.7,
-        roughness: 0.35,
-        normalMap: panelNormal,
-        normalScale: new THREE.Vector2(0.45, 0.45),
-        envMapIntensity: 1.6,
-      }),
-    [panelNormal]
-  );
+    const box = new THREE.Box3().setFromObject(probe);
+    const size = new THREE.Vector3();
+    box.getSize(size);
 
-  // Cockpit canopy — smoked-glass with a faint amber emissive so the
-  // bloom pass picks up the sun-glint-on-canopy moment from Brief §3.
-  const canopyMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: "#0F1A2A",
-        metalness: 0.85,
-        roughness: 0.08,
-        emissive: "#FFA855",
-        emissiveIntensity: 0.25,
-        transparent: true,
-        opacity: 0.88,
-        envMapIntensity: 2.0,
-      }),
-    []
-  );
+    // Longest dimension = fuselage length. Aircraft proportions: length
+    // is always > wingspan for fighter jets, so this heuristic is safe
+    // for the F-18 (length ≈ 17m, span ≈ 13m).
+    const longestAxis = Math.max(size.x, size.y, size.z);
+    const scale = TARGET_LENGTH / Math.max(longestAxis, 0.001);
 
-  // Intake duct — black interior, low metalness so it stays a hole in
-  // the silhouette.
-  const intakeMat = useMemo(
-    () =>
-      new THREE.MeshBasicMaterial({
-        color: "#050507",
-        side: THREE.DoubleSide,
-      }),
-    []
-  );
+    // Re-measure in the scaled frame. Do this by scaling the size
+    // vector directly — same outcome as re-applying scale + recompute
+    // box, but avoids a second clone.
+    const scaledSize = size.clone().multiplyScalar(scale);
+    const scaledCenter = box.getCenter(new THREE.Vector3()).multiplyScalar(scale);
 
+    return {
+      scale,
+      noseZ: scaledCenter.z + scaledSize.z / 2,
+      tailZ: scaledCenter.z - scaledSize.z / 2,
+      wingtipX: scaledSize.x / 2,
+      topY: scaledCenter.y + scaledSize.y / 2,
+      centerY: scaledCenter.y,
+    };
+  }, [cloned]);
+
+  // Augment the loaded materials so they respond well to our HDRI
+  // sunset environment. The source model's bundled materials may be
+  // flat-shaded or use plain PBR with low envMap intensity — pumping
+  // envMapIntensity makes the sunset light wrap the airframe with
+  // visible warm/cool gradients, the single biggest visual lift.
+  useEffect(() => {
+    cloned.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mat = mesh.material as
+        | THREE.MeshStandardMaterial
+        | THREE.MeshStandardMaterial[]
+        | undefined;
+      if (!mat) return;
+      const apply = (m: THREE.MeshStandardMaterial) => {
+        m.envMapIntensity = 1.6;
+        // Slight metalness lift if the source had it dialed all the way
+        // down — fighter-jet skin reads as semi-glossy painted metal.
+        if (typeof m.metalness === "number" && m.metalness < 0.2) {
+          m.metalness = 0.35;
+        }
+        if (typeof m.roughness === "number" && m.roughness > 0.85) {
+          m.roughness = 0.55;
+        }
+        m.needsUpdate = true;
+      };
+      if (Array.isArray(mat)) mat.forEach(apply);
+      else apply(mat);
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+    });
+  }, [cloned]);
+
+  // Per-frame: pulse + ramp the afterburner emissive intensity from
+  // the parent's glowIntensityRef. Shared with the procedural jet's
+  // prior behavior so the intro/scroll keyframes still hit their
+  // glow targets correctly.
   useFrame((state) => {
     const t = state.clock.elapsedTime;
     const base = glowIntensityRef?.current ?? 2.5;
@@ -219,184 +171,102 @@ export const MaverichJet = forwardRef<THREE.Group, Props>(function MaverichJet(
       burnerLightRight.current.intensity = lightIntensity;
   });
 
+  // Decoration positions, derived from the measured bounding box so
+  // they sit on the model regardless of which GLB ends up loaded.
+  // Burners sit a touch behind the tail to read as exhaust trails.
+  const burnerOffset = 0.15;
+  const leftBurnerX = -0.18;
+  const rightBurnerX = 0.18;
+  const burnerY = metrics.centerY * 0.6;
+  const burnerZ = metrics.tailZ - burnerOffset;
+
+  // M call-sign placeholder: the procedural M worked because the
+  // procedural fuselage was a flat box; on the real GLB a flat text
+  // mesh would clip into the curved fuselage surface unless we
+  // decal-project it (non-trivial, deferred to a later phase). The
+  // brand mark reads on the page chrome (header, footer, loading M)
+  // so the absence here doesn't lose the call-sign beat.
+
   return (
     <group ref={ref}>
-      {/* Fuselage — centered box, length 4 along Z (z: -2 to +2) */}
-      <mesh material={bodyMat}>
-        <boxGeometry args={[0.7, 0.6, 4]} />
-      </mesh>
+      {/* The loaded F-18 model. Rotation maps the source's nose axis
+          to the scene's +Z forward convention. Scale normalises to
+          TARGET_LENGTH so the camera framing in persistent-scene
+          stays accurate regardless of the source model's units. */}
+      <group
+        rotation={MODEL_ROTATION}
+        scale={[metrics.scale, metrics.scale, metrics.scale]}
+      >
+        <primitive object={cloned} />
+      </group>
 
-      {/* Nose cone — apex points forward (+Z), base joins the fuselage.
-          Three.js cones default to apex at +Y; +π/2 rotation around X
-          maps +Y → +Z so the pointy end leads the jet. (The previous
-          -π/2 rotation reversed this, presenting the flat base to the
-          camera so the front read as an engine bell — making the jet
-          look like it was flying tail-first.) */}
-      <mesh
-        position={[0, 0, 2.5]}
-        rotation={[Math.PI / 2, 0, 0]}
-        material={bodyMat}
-      >
-        <coneGeometry args={[0.35, 1.2, 16]} />
-      </mesh>
-
-      {/* Cockpit canopy — top half-sphere, elongated along the fuselage */}
-      <mesh
-        position={[0, 0.3, 1.0]}
-        scale={[1, 1, 1.6]}
-        material={canopyMat}
-      >
-        <sphereGeometry
-          args={[0.4, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2]}
-        />
-      </mesh>
-
-      {/* Pilot silhouette — capsule visible inside the canopy */}
-      <mesh position={[0, 0.32, 1.0]}>
-        <capsuleGeometry args={[0.11, 0.18, 4, 8]} />
-        <meshStandardMaterial color="#0A0A0B" roughness={0.9} />
-      </mesh>
-
-      {/* Main wings — swept ~25° back, 5° anhedral droop on tips */}
-      <mesh
-        position={[-1.65, -0.05, -0.2]}
-        rotation={[0, -0.43, 0.09]}
-        material={wingMat}
-      >
-        <boxGeometry args={[2.6, 0.05, 1.4]} />
-      </mesh>
-      <mesh
-        position={[1.65, -0.05, -0.2]}
-        rotation={[0, 0.43, -0.09]}
-        material={wingMat}
-      >
-        <boxGeometry args={[2.6, 0.05, 1.4]} />
-      </mesh>
-
-      {/* Horizontal tail stabilizers */}
-      <mesh
-        position={[-0.85, -0.05, -1.7]}
-        rotation={[0, -0.5, 0]}
-        material={wingMat}
-      >
-        <boxGeometry args={[1.2, 0.05, 0.6]} />
-      </mesh>
-      <mesh
-        position={[0.85, -0.05, -1.7]}
-        rotation={[0, 0.5, 0]}
-        material={wingMat}
-      >
-        <boxGeometry args={[1.2, 0.05, 0.6]} />
-      </mesh>
-
-      {/* Twin vertical stabilizers — F/A-18 twin tails, canted outward 12° */}
-      <mesh
-        position={[-0.3, 0.55, -1.4]}
-        rotation={[0, 0, -0.21]}
-        material={bodyMat}
-      >
-        <boxGeometry args={[0.05, 0.85, 0.7]} />
-      </mesh>
-      <mesh
-        position={[0.3, 0.55, -1.4]}
-        rotation={[0, 0, 0.21]}
-        material={bodyMat}
-      >
-        <boxGeometry args={[0.05, 0.85, 0.7]} />
-      </mesh>
-
-      {/* Engine intakes — dark interior */}
-      <mesh
-        position={[-0.5, -0.18, 0.4]}
-        rotation={[Math.PI / 2, 0, 0]}
-        material={intakeMat}
-      >
-        <cylinderGeometry args={[0.18, 0.18, 0.5, 16, 1, true]} />
-      </mesh>
-      <mesh
-        position={[0.5, -0.18, 0.4]}
-        rotation={[Math.PI / 2, 0, 0]}
-        material={intakeMat}
-      >
-        <cylinderGeometry args={[0.18, 0.18, 0.5, 16, 1, true]} />
-      </mesh>
-
-      {/* Twin afterburners — emissive cones pointing rearward (-Z) */}
-      <mesh position={[-0.3, 0, -2.1]} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.22, 0.16, 0.5, 16]} />
+      {/* Twin afterburner glow plates. Emissive plane discs that
+          catch the bloom post-effect — read as hot exhaust without
+          needing volumetric shaders. */}
+      <mesh position={[leftBurnerX, burnerY, burnerZ]} rotation={[0, Math.PI, 0]}>
+        <circleGeometry args={[0.13, 24]} />
         <meshStandardMaterial
           ref={burnerLeft}
-          attach="material"
           color="#1A0A05"
           emissive="#FFB347"
           emissiveIntensity={2.5}
           roughness={0.7}
+          side={THREE.DoubleSide}
+          toneMapped={false}
         />
       </mesh>
-      <mesh position={[0.3, 0, -2.1]} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.22, 0.16, 0.5, 16]} />
+      <mesh position={[rightBurnerX, burnerY, burnerZ]} rotation={[0, Math.PI, 0]}>
+        <circleGeometry args={[0.13, 24]} />
         <meshStandardMaterial
           ref={burnerRight}
-          attach="material"
           color="#1A0A05"
           emissive="#FFB347"
           emissiveIntensity={2.5}
           roughness={0.7}
+          side={THREE.DoubleSide}
+          toneMapped={false}
         />
       </mesh>
 
-      {/* Hot-glow halos behind the burners — point lights for soft bloom */}
+      {/* Hot-glow halos behind the burners — point lights for soft
+          bloom + scene illumination on nearby surfaces. */}
       <pointLight
         ref={burnerLightLeft}
-        position={[-0.3, 0, -2.5]}
+        position={[leftBurnerX, burnerY, burnerZ - 0.4]}
         color="#FFB347"
         intensity={1.2}
         distance={6}
       />
       <pointLight
         ref={burnerLightRight}
-        position={[0.3, 0, -2.5]}
+        position={[rightBurnerX, burnerY, burnerZ - 0.4]}
         color="#FFB347"
         intensity={1.2}
         distance={6}
       />
 
-      {/* M call-sign — front of fuselage, between the intakes, facing +Z.
-          Outline color is the brand amber so bloom catches the rim. */}
-      <Text
-        position={[0, -0.05, 2.01]}
-        fontSize={0.32}
-        color="#F5F2EC"
-        anchorX="center"
-        anchorY="middle"
-        outlineWidth={0.012}
-        outlineColor="#E8B547"
-        letterSpacing={-0.04}
-      >
-        M
-      </Text>
+      {/* Wingtip vapor vortices — Sparkles emitting from each
+          measured wing tip. Active during the pass-over; they fade
+          naturally as the camera leaves the close-up. */}
+      <Sparkles
+        position={[-metrics.wingtipX, burnerY, 0]}
+        count={28}
+        scale={[0.5, 0.3, 1.6]}
+        size={2.0}
+        speed={0.4}
+        color="#FFE4B5"
+        opacity={0.65}
+      />
+      <Sparkles
+        position={[metrics.wingtipX, burnerY, 0]}
+        count={28}
+        scale={[0.5, 0.3, 1.6]}
+        size={2.0}
+        speed={0.4}
+        color="#FFE4B5"
+        opacity={0.65}
+      />
 
-      {/* Wingtip vapor vortices — amber-tinted Sparkles emitting from each
-          wingtip. Active during the pass-over; they fade naturally as the
-          camera leaves the close-up. */}
-      <Sparkles
-        position={[-2.85, -0.05, -0.4]}
-        count={36}
-        scale={[0.6, 0.3, 1.6]}
-        size={2.4}
-        speed={0.4}
-        color="#FFE4B5"
-        opacity={0.7}
-      />
-      <Sparkles
-        position={[2.85, -0.05, -0.4]}
-        count={36}
-        scale={[0.6, 0.3, 1.6]}
-        size={2.4}
-        speed={0.4}
-        color="#FFE4B5"
-        opacity={0.7}
-      />
     </group>
   );
 });

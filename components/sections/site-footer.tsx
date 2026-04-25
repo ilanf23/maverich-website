@@ -52,6 +52,43 @@ export function SiteFooter() {
       <div className="mx-auto mt-10 w-full max-w-6xl text-center">
         <MonoTag tone="subtle">© 2026 MAVERICH.AI — BUILT BY HUMANS.</MonoTag>
       </div>
+
+      {/* CC-BY-SA-4.0 attribution for the F/A-18 Hornet 3D model — required
+          by the model's license. Kept small + muted so it doesn't compete
+          with the brand chrome. */}
+      <div
+        className="mx-auto mt-3 w-full max-w-6xl text-center"
+        style={{ color: "var(--ink-muted)", fontSize: "0.65rem", lineHeight: 1.5 }}
+      >
+        F/A-18 Hornet model based on{" "}
+        <a
+          href="https://sketchfab.com/3d-models/low-poly-fa-18-hornet-9b48c88e91ba40fc8f518b616f44f714"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline"
+        >
+          &ldquo;Low Poly F/A-18 Hornet&rdquo;
+        </a>{" "}
+        by{" "}
+        <a
+          href="https://sketchfab.com/cs09736"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline"
+        >
+          cs09736
+        </a>{" "}
+        — licensed under{" "}
+        <a
+          href="http://creativecommons.org/licenses/by-sa/4.0/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline"
+        >
+          CC-BY-SA-4.0
+        </a>
+        .
+      </div>
     </footer>
   );
 }
