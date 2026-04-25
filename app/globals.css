@@ -41,6 +41,15 @@
     --dur-base: 400ms;
     --dur-emphatic: 800ms;
     --dur-cinematic: 1400ms;
+
+    /* Type scale — brief §5 */
+    --type-display-1: 8rem;
+    --type-display-2: 5rem;
+    --type-display-3: 3.5rem;
+    --type-body-lg: 1.375rem;
+    --type-body: 1.0625rem;
+    --type-caption: 0.875rem;
+    --type-mono-tag: 0.75rem;
   }
 
   html {
@@ -66,6 +75,61 @@
   ::-webkit-scrollbar {
     width: 0;
     height: 0;
+  }
+}
+
+@layer utilities {
+  /* Typography scale — brief §5. Display uses Fraunces, tight tracking. */
+  .type-display-1 {
+    font-family: var(--font-fraunces), Georgia, serif;
+    font-size: clamp(3rem, 11vw, var(--type-display-1));
+    line-height: 0.95;
+    letter-spacing: -0.04em;
+    font-weight: 500;
+  }
+
+  .type-display-2 {
+    font-family: var(--font-fraunces), Georgia, serif;
+    font-size: clamp(2.5rem, 7vw, var(--type-display-2));
+    line-height: 0.95;
+    letter-spacing: -0.04em;
+    font-weight: 500;
+  }
+
+  .type-display-3 {
+    font-family: var(--font-fraunces), Georgia, serif;
+    font-size: clamp(2rem, 5vw, var(--type-display-3));
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    font-weight: 500;
+  }
+
+  .type-body-lg {
+    font-family: var(--font-inter), system-ui, sans-serif;
+    font-size: clamp(1.125rem, 1.4vw, var(--type-body-lg));
+    line-height: 1.55;
+    letter-spacing: -0.01em;
+  }
+
+  .type-body {
+    font-family: var(--font-inter), system-ui, sans-serif;
+    font-size: var(--type-body);
+    line-height: 1.55;
+  }
+
+  .type-caption {
+    font-family: var(--font-inter), system-ui, sans-serif;
+    font-size: var(--type-caption);
+    line-height: 1.5;
+    color: var(--ink-secondary);
+  }
+
+  .type-mono-tag {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: var(--type-mono-tag);
+    line-height: 1.4;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
   }
 }
 
