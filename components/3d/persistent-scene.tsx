@@ -42,39 +42,70 @@ import { useIntro } from "../providers/intro-provider";
  * handoff at intro completion reads as a smooth settle, not a cut.
  */
 
-// ─── Intro keyframe table (same waypoints as v1, time-driven) ─────────
+// ─── Intro keyframe table ─────────────────────────────────────────────
+//
+// The jet's local +Z is its forward (nose) axis, so for the camera to
+// see the FRONT of the jet the camera must always be at a greater Z
+// than the jet. Old v1 ended with a heroic pass-OVER (jet flew behind
+// the camera, camera looked back at the jet's tail) — that stranded
+// the user looking at the engines for the entire persistent regime.
+//
+// v2.1 keyframes preserve the dramatic canyon approach but END with
+// the jet decelerating and hovering IN FRONT of the camera, nose
+// toward the viewer. The final intro pose matches the persistent
+// regime's neutral camera + section-1 jet pose exactly, so there's
+// zero handoff jitter when phase flips to "complete".
 
 const KEYS = [0.0, 0.2, 0.4, 0.6, 0.75, 0.9, 1.0] as const;
 
 const INTRO_CAMERA_POS: ReadonlyArray<[number, number, number]> = [
-  [0, 5, 25],
-  [0, 4, 20],
-  [0, 3, 15],
-  [0, 2.5, 10],
-  [0, 2, 5],
-  [0, 1.5, 2],
-  [0, 1, 0],
+  [0, 5, 25],     // 0.00  far establishing shot
+  [0, 4.6, 22],   // 0.20  dolly start
+  [0, 4.2, 18],   // 0.40  dolly mid — camera closing in
+  [0, 4.0, 14],   // 0.60  approach continues
+  [0, 3.8, 11],   // 0.75  near settle
+  [0, 3.6, 9],    // 0.90  almost at neutral
+  [0, 3.5, 8],    // 1.00  matches NEUTRAL_CAMERA_POS exactly
 ];
 
 const INTRO_LOOKAT: ReadonlyArray<[number, number, number]> = [
-  [0, 4, -150],
-  [0, 4, -120],
-  [0, 3, -80],
-  [0, 2.5, -30],
-  [0, 2, -10],
-  [0, 1.5, -3],
-  [0, 5, 5],
+  [0, 4, -150],   // 0.00  looking deep at far jet
+  [0, 4, -100],   // 0.20  jet still small in distance
+  [0, 3.5, -55],  // 0.40  jet mid-canyon
+  [0, 3.5, -22],  // 0.60  jet large in frame
+  [0, 3.5, -5],   // 0.75  jet emerging into close range
+  [0, 3.2, 1],    // 0.90  decelerating, jet ahead of camera
+  [0, 3, 0],      // 1.00  matches NEUTRAL_CAMERA_LOOKAT exactly
 ];
 
-const INTRO_JET_POS = INTRO_LOOKAT;
+// Jet world position over the intro. Always at z < camera.z so the
+// camera sees the nose throughout. Late frames decelerate sharply so
+// the jet "settles" in front of the camera instead of zooming past.
+const INTRO_JET_POS: ReadonlyArray<[number, number, number]> = [
+  [0, 4, -150],   // 0.00  tiny dot deep in the valley
+  [0, 4, -100],   // 0.20  approach
+  [0, 3.7, -55],  // 0.40  mid-canyon
+  [0, 3.7, -22],  // 0.60  emerging
+  [0, 3.8, -5],   // 0.75  close, large in frame
+  [0, 4, 2],      // 0.90  decelerating, in front of camera (cam @ z=9)
+  [0, 4, 4],      // 1.00  hover — matches SECTION_POSES[0] exactly
+];
 
-const INTRO_GLOW: readonly number[] = [1.5, 1.8, 2.2, 2.8, 3.5, 4.2, 4.5];
+// Glow peaks during the heroic mid-approach (afterburners hot) and
+// settles to ambient as the jet decelerates into hover. Continuity
+// with SECTION_POSES[0].glow at p=1.
+const INTRO_GLOW: readonly number[] = [
+  1.5, 1.8, 2.4, 3.2, 3.8, 3.0, 2.6,
+];
 
 // ─── Post-intro neutral camera pose ───────────────────────────────────
 //
 // After the intro completes the camera holds here. Steady eye-level
 // frame, slightly back and up. The jet flies in front; its world
 // position controls where it appears on screen.
+//
+// MUST match the last entry of INTRO_CAMERA_POS / INTRO_LOOKAT for a
+// seamless intro→persistent handoff.
 
 const NEUTRAL_CAMERA_POS = new THREE.Vector3(0, 3.5, 8);
 const NEUTRAL_CAMERA_LOOKAT = new THREE.Vector3(0, 3, 0);
@@ -141,28 +172,33 @@ type JetPose = {
 
 const SECTION_KEYS = [0.0, 0.08, 0.22, 0.4, 0.55, 0.72, 0.88, 1.0] as const;
 
-// Eight key poses across the page. Index 0 is the post-intro "settle",
-// index 7 is the footer. Continuity at index 0: the intro ends with the
-// jet at world (0, 5, 5) — section-1 settle is close to that so the
-// handoff is a short soft-lerp, not a jump.
+// Eight key poses across the page. Index 0 is the post-intro "settle"
+// — its position MUST equal the intro's final jet pose for a seamless
+// handoff. Every pose keeps z < camera.z (8) so the camera always sees
+// the jet's NOSE, never its tail. Rotation values stay below ±π/3 so
+// the jet only banks/pitches; it never rotates around to face away.
 const SECTION_POSES: readonly JetPose[] = [
-  // 0.00 — intro just completed. Echo the intro's final jet pose, then
-  //        ease into the section-1 hovering wingman frame.
-  { position: [0, 5, 4], rotation: [0, 0, 0], glow: 4.0, scale: 1.4 },
-  // 0.08 — Section 1 (hero settled). Wingman hovers top-right of frame.
-  { position: [4, 4.5, -2], rotation: [0, -0.3, 0.08], glow: 2.6, scale: 1.4 },
-  // 0.22 — Section 2 (products). Right-side formation pose, gentle bank.
-  { position: [6, 3.5, -4], rotation: [-0.05, -0.45, 0.12], glow: 2.4, scale: 1.4 },
-  // 0.40 — Section 3 (proof). Low-altitude flyby, swung to left of frame.
-  { position: [-7, 2.2, -5], rotation: [0.04, 0.5, -0.14], glow: 2.8, scale: 1.4 },
-  // 0.55 — Section 4 (process). Afterburner. Centered, climbing away.
-  { position: [0, 4, -8], rotation: [-0.18, 0, 0], glow: 4.6, scale: 1.4 },
-  // 0.72 — Section 5 (founders). Calm hover, returning to the right.
-  { position: [-4, 5, -4], rotation: [0, 0.25, -0.06], glow: 2.2, scale: 1.4 },
+  // 0.00 — intro just completed. Position + glow match INTRO_*[6] so
+  //        the handoff is a no-op, no jump.
+  { position: [0, 4, 4], rotation: [0, 0, 0], glow: 2.6, scale: 1.4 },
+  // 0.08 — Section 1 (hero settled). Wingman drifts top-right of frame.
+  { position: [3, 4.5, 2], rotation: [0, -0.18, 0.06], glow: 2.4, scale: 1.4 },
+  // 0.22 — Section 2 (products). Right-side formation pose, gentle bank
+  //        toward the right; nose still toward camera.
+  { position: [4.5, 3.8, 0], rotation: [-0.04, -0.28, 0.08], glow: 2.4, scale: 1.4 },
+  // 0.40 — Section 3 (proof). Low-altitude track across the left side.
+  { position: [-5, 2.5, -2], rotation: [0.03, 0.32, -0.10], glow: 2.8, scale: 1.4 },
+  // 0.55 — Section 4 (process). Afterburner — engines glow brighter.
+  //        Slight pitch-up + small yaw so we still see the nose AND
+  //        the burner halo wraps the silhouette. Brief: AFTERBURNER MODE.
+  { position: [0, 4.2, -3], rotation: [-0.14, -0.18, 0.04], glow: 4.6, scale: 1.4 },
+  // 0.72 — Section 5 (founders). Calm hover on the left, banking back
+  //        toward camera. RTB vibe.
+  { position: [-3, 4.8, 0], rotation: [0, 0.22, -0.05], glow: 2.2, scale: 1.4 },
   // 0.88 — Section 6 (CTA). Centered, inviting. Wingman seat reads.
-  { position: [0, 4, -3], rotation: [0, 0, 0], glow: 2.8, scale: 1.4 },
-  // 1.00 — Footer. Jet drifts up and back, reads as "RTB".
-  { position: [2, 6, -2], rotation: [0, -0.15, 0.04], glow: 2.0, scale: 1.4 },
+  { position: [0, 4, 1], rotation: [0, 0, 0], glow: 2.8, scale: 1.4 },
+  // 1.00 — Footer. Jet drifts up and slightly off — "RTB".
+  { position: [2, 5.5, 2], rotation: [0, -0.12, 0.03], glow: 2.0, scale: 1.4 },
 ];
 
 function getJetStateForScroll(p: number): JetPose {
