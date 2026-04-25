@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import * as THREE from "three";
 import { createNoise2D } from "simplex-noise";
+import { useTexture } from "@react-three/drei";
 
 /**
  * MountainLandscape — sunset-rim-lit four-layer canyon, v2.
@@ -261,10 +262,20 @@ export function MountainLandscape() {
     []
   );
 
-  // Materials shared per layer. v2 darkens significantly so the warm
-  // sunset sky silhouettes the mountains. Sunset rim light from the
-  // supplemental directional in HeroScene is what tells the eye these
-  // are 3D objects, not flat cutouts.
+  // Real PolyHaven CC0 PBR rock textures — used by foreground + mid ridges.
+  // Far/horizon stay procedural; they're too distant for texture detail
+  // to matter, and the atmospheric scattering shader collapses them
+  // toward sky color anyway.
+  const ridgeTextures = useTexture({
+    map: "/textures/rock/rock_face_03_diff_2k.jpg",
+    normalMap: "/textures/rock/rock_face_03_nor_gl_2k.jpg",
+    roughnessMap: "/textures/rock/rock_face_03_rough_2k.jpg",
+    aoMap: "/textures/rock/rock_face_03_ao_2k.jpg",
+  });
+
+  // Materials per layer. Photoreal direction — foreground/mid use PBR
+  // texture set; far/horizon use procedural normal + atmospheric
+  // scattering injection.
   const groundMat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
@@ -275,35 +286,40 @@ export function MountainLandscape() {
     []
   );
   const ridgeMat = useMemo(() => {
-    // Clone the rock normal per layer so we can tune repeat per surface
-    // without mutating the shared texture.
-    const n = rockNormal.clone();
-    n.repeat.set(1, 1);
-    n.wrapS = n.wrapT = THREE.RepeatWrapping;
-    n.needsUpdate = true;
+    // Configure all four PBR maps for ridge-length tiling.
+    [ridgeTextures.map, ridgeTextures.normalMap, ridgeTextures.roughnessMap, ridgeTextures.aoMap].forEach(
+      (tex) => {
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(8, 1);
+        tex.anisotropy = 8;
+      }
+    );
     return new THREE.MeshStandardMaterial({
-      color: "#0E1A18",
-      roughness: 0.98,
-      metalness: 0.02,
-      normalMap: n,
-      normalScale: new THREE.Vector2(1.4, 1.4),
+      map: ridgeTextures.map,
+      normalMap: ridgeTextures.normalMap,
+      normalScale: new THREE.Vector2(1.6, 1.6),
+      roughnessMap: ridgeTextures.roughnessMap,
+      aoMap: ridgeTextures.aoMap,
+      aoMapIntensity: 0.85,
+      roughness: 1.0,
+      metalness: 0.05,
       side: THREE.DoubleSide,
+      // Cool tint pulls the rock toward the morning sky color.
+      color: "#8AA0A8",
     });
-  }, [rockNormal]);
+  }, [ridgeTextures]);
   const midMat = useMemo(() => {
-    const n = rockNormal.clone();
-    n.repeat.set(2, 2);
-    n.wrapS = n.wrapT = THREE.RepeatWrapping;
-    n.needsUpdate = true;
     return new THREE.MeshStandardMaterial({
-      color: "#1A2A28",
-      roughness: 0.95,
+      map: ridgeTextures.map,
+      normalMap: ridgeTextures.normalMap,
+      normalScale: new THREE.Vector2(0.9, 0.9),
+      roughnessMap: ridgeTextures.roughnessMap,
+      roughness: 1.0,
       metalness: 0.0,
-      normalMap: n,
-      normalScale: new THREE.Vector2(1.0, 1.0),
-      flatShading: false,
+      // Cooler/darker tint shifts mid distance away from foreground.
+      color: "#5A7078",
     });
-  }, [rockNormal]);
+  }, [ridgeTextures]);
   const farMat = useMemo(() => {
     const n = rockNormal.clone();
     n.repeat.set(2, 2);
