@@ -18,6 +18,7 @@ import { MaverichJet } from "./maverich-jet";
 import { MountainLandscape } from "./mountain-landscape";
 import { TreeForest } from "./tree-forest";
 import { SkyAtmosphere } from "./sky-atmosphere";
+import { CloudSea } from "./cloud-sea";
 import { useIntro } from "../providers/intro-provider";
 
 /**
@@ -484,6 +485,7 @@ export function PersistentScene() {
       <group ref={canyonGroupRef} name="canyon-environment">
         <SkyAtmosphere sunRef={setSunMesh} />
         <MountainLandscape />
+        <CloudSea />
         <TreeForest count={200} />
       </group>
 
