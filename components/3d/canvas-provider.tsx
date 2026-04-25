@@ -36,6 +36,7 @@ export function CanvasProvider({
           antialias: true,
           alpha: true,
           powerPreference: "high-performance",
+          toneMappingExposure: 1.2,
         }}
       >
         <Suspense fallback={null}>{children}</Suspense>
