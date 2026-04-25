@@ -1,129 +1,216 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
-  useIntroAnimation,
-  type IntroPhase,
-} from "@/components/3d/intro-animation";
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useLenis } from "./lenis-provider";
+import { usePrefersReducedMotion } from "@/components/hooks/use-prefers-reduced-motion";
 
 /**
- * IntroProvider — top-level orchestration of the cinematic intro state.
+ * IntroProvider — owns the cinematic-intro state machine for Phase 4 v2.
  *
- * Three lifecycle decisions made here:
- *   1. Should the intro play at all? (no on mobile or reduced-motion)
- *   2. Drive progress + phase from the useIntroAnimation hook
- *   3. Side-effects: lock page scroll while phase === "playing"
+ *   loading → playing → complete
  *
- * Consumed by:
- *   • <SiteHeader>          → fades in when phase === "complete"
- *   • <HeroSection>         → drives the canvas progress + skip button
- *   • <ScrollProgress>      → hidden until phase === "complete"
+ * The intro itself is TIME-driven (not scroll-driven), so progress lives
+ * on a ref written each rAF tick — components inside the persistent
+ * canvas read this ref from useFrame without re-rendering React.
  *
- * Mounted INSIDE <LenisProvider> so it can stop/start Lenis directly.
+ * Three lifecycle paths:
+ *   1. Default — loader runs while assets stream, then 11s autoplay
+ *      intro, then complete. Scroll locked during loading + playing.
+ *   2. Returning visitor (localStorage flag set) — loader still runs
+ *      to mask asset load, but skips straight from loading → complete.
+ *      No 11s wait.
+ *   3. prefers-reduced-motion — loader skipped, phase boots at
+ *      "complete" instantly. Static fallback hero. No scroll lock.
  *
- * Performance: progress is exposed as a ref, NOT React state, so the
- * 60Hz progress updates do not re-render every context consumer. Only
- * `phase` is reactive — and it transitions ~3 times across the intro.
+ * Scroll lock strategy:
+ *   • Lenis: lenis.stop() / lenis.start() (smoothes are paused)
+ *   • Body overflow: hidden (catches the brief moment before Lenis init)
+ *
+ * The provider does NOT itself drive any animation. It exposes
+ * progressRef to the canvas; the canvas writes to it from inside its
+ * own useFrame loop. This avoids a React state update per frame.
  */
+
+const INTRO_DURATION_MS = 11000;
+const SEEN_FLAG_KEY = "maverich.intro.seen.v1";
+
+export type IntroPhase = "loading" | "playing" | "complete";
+
 type IntroContextValue = {
-  /** Mutable, frame-accurate. Read .current inside useFrame or rAF. */
-  progressRef: React.MutableRefObject<number>;
   phase: IntroPhase;
+  /** 0 → 1 across the 11s intro. Written from rAF; read inside useFrame. */
+  progressRef: React.MutableRefObject<number>;
+  /** Triggered by the LoadingScreen once assets load + min hold elapses. */
+  startIntro: () => void;
+  /** Skip-intro button + auto-skip-on-revisit handler. */
   skip: () => void;
-  /** True when intro mode actually applies — false on mobile/reduced-motion. */
+  /** Convenience: true while phase ∈ {loading, playing}. */
   active: boolean;
+  /** True when the user has seen the intro before — loader still shows
+   *  (asset progress) but the 11s autoplay is skipped on this visit. */
+  isReturningVisitor: boolean;
 };
 
-function makeDefaultValue(): IntroContextValue {
-  // Static fallback — used by SSR and pre-decision render. progressRef is
-  // a fresh ref so consumers can still .current it without crashing.
-  return {
-    progressRef: { current: 1 } as React.MutableRefObject<number>,
-    phase: "complete",
-    skip: () => {},
-    active: false,
-  };
-}
-
-const IntroContext = createContext<IntroContextValue>(makeDefaultValue());
+const IntroContext = createContext<IntroContextValue | null>(null);
 
 export function useIntro(): IntroContextValue {
-  return useContext(IntroContext);
+  const ctx = useContext(IntroContext);
+  if (!ctx) {
+    throw new Error("useIntro must be used within an IntroProvider");
+  }
+  return ctx;
 }
 
-type Decision = "undecided" | "play" | "skip";
-
 export function IntroProvider({ children }: { children: React.ReactNode }) {
-  const [decision, setDecision] = useState<Decision>("undecided");
   const lenisRef = useLenis();
+  const [internalPhase, setInternalPhase] = useState<IntroPhase>("loading");
+  const [isReturningVisitor, setIsReturningVisitor] = useState(false);
+  const reduced = usePrefersReducedMotion();
 
-  // Stable ref for the "skip" / "undecided" branches — keeps the value
-  // identity-stable across renders so consumers don't see a "new" ref.
-  const fallbackProgressRef = useRef(1);
+  // Reduced-motion users boot straight to "complete" via this derived
+  // value — no setState-in-effect on the preference branch. The
+  // internal phase machine still drives transitions for motion-allowed
+  // users.
+  const phase: IntroPhase = reduced ? "complete" : internalPhase;
 
+  // progressRef is the single source of truth for intro position. Canvas
+  // animators read it inside useFrame; HTML overlays read phase only.
+  // For reduced-motion users this stays 0 (the canvas never mounts,
+  // so its value doesn't matter).
+  const progressRef = useRef(0);
+
+  // rAF + start time for the time-driven intro.
+  const rafIdRef = useRef<number | null>(null);
+  const startedAtRef = useRef<number | null>(null);
+
+  // Returning-visitor flag — must read localStorage client-side. We
+  // subscribe via the storage event so multi-tab sessions stay in sync,
+  // which makes the setState here a legitimate external-system sync.
   useEffect(() => {
-    const reduced = window.matchMedia(
-      "(prefers-reduced-motion: reduce)"
-    ).matches;
-    const mobile = window.matchMedia("(max-width: 767px)").matches;
-    setDecision(reduced || mobile ? "skip" : "play");
+    const read = () => {
+      try {
+        setIsReturningVisitor(
+          window.localStorage.getItem(SEEN_FLAG_KEY) === "1"
+        );
+      } catch {
+        // localStorage may throw under strict privacy modes — harmless.
+      }
+    };
+    read();
+    window.addEventListener("storage", read);
+    return () => window.removeEventListener("storage", read);
   }, []);
 
-  const intro = useIntroAnimation({ enabled: decision === "play" });
-
-  // Resolve the value exposed to consumers based on decision. We avoid
-  // creating new objects every render by keeping decision-bucket
-  // construction explicit — the hook return is stable across renders
-  // because phase only changes on transitions.
-  let value: IntroContextValue;
-  if (decision === "skip") {
-    fallbackProgressRef.current = 1;
-    value = {
-      progressRef: fallbackProgressRef,
-      phase: "complete",
-      skip: () => {},
-      active: false,
-    };
-  } else if (decision === "undecided") {
-    fallbackProgressRef.current = 0;
-    value = {
-      progressRef: fallbackProgressRef,
-      phase: "idle",
-      skip: () => {},
-      active: false,
-    };
-  } else {
-    value = {
-      progressRef: intro.progressRef,
-      phase: intro.phase,
-      skip: intro.skip,
-      active: true,
-    };
-  }
-
-  // Page-wide scroll lock while the intro is playing.
+  // Body overflow lock — guarantees no scroll happens before Lenis is
+  // ready to take its own .stop() call. Cleared once phase=complete.
   useEffect(() => {
-    const playing = value.phase === "playing";
-    if (playing) {
-      const prevHtml = document.documentElement.style.overflow;
-      const prevBody = document.body.style.overflow;
-      document.documentElement.style.overflow = "hidden";
-      document.body.style.overflow = "hidden";
-      lenisRef?.current?.stop();
-      // HMR or refresh-mid-scroll could leave us partway down — pin top
-      // so the user actually sees the cinematic establishing frame.
-      window.scrollTo(0, 0);
-      return () => {
-        document.documentElement.style.overflow = prevHtml;
-        document.body.style.overflow = prevBody;
-        lenisRef?.current?.start();
-      };
-    }
-    return undefined;
-  }, [value.phase, lenisRef]);
+    if (phase === "complete") return;
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtml = html.style.overflow;
+    const prevBody = body.style.overflow;
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    return () => {
+      html.style.overflow = prevHtml;
+      body.style.overflow = prevBody;
+    };
+  }, [phase]);
 
-  return (
-    <IntroContext.Provider value={value}>{children}</IntroContext.Provider>
+  // Lenis lock — stop smooth scroll while intro is active. Lenis isn't
+  // constructed under prefers-reduced-motion so guard for null. The
+  // ref's `.current` may also be null between provider mount + Lenis
+  // construction; we re-attempt on each phase change so Lenis catches
+  // up if it mounted after us.
+  useEffect(() => {
+    const lenis = lenisRef?.current;
+    if (!lenis) return;
+    if (phase === "loading" || phase === "playing") {
+      lenis.stop();
+    } else {
+      lenis.start();
+    }
+  }, [lenisRef, phase]);
+
+  // Start the time-driven intro. Triggered by LoadingScreen once assets
+  // are ready + min loader hold has elapsed. Returning visitors skip the
+  // 11s autoplay entirely.
+  const startIntro = useCallback(() => {
+    if (isReturningVisitor) {
+      progressRef.current = 1;
+      setInternalPhase("complete");
+      return;
+    }
+    setInternalPhase("playing");
+    startedAtRef.current = performance.now();
+    const tick = (now: number) => {
+      const startedAt = startedAtRef.current ?? now;
+      const elapsed = now - startedAt;
+      const t = Math.min(elapsed / INTRO_DURATION_MS, 1);
+      // easeOutQuint — cinematic settle. Matches the v1 keyframe table
+      // pacing so the existing waypoints still read with correct beats.
+      const eased = 1 - Math.pow(1 - t, 5);
+      progressRef.current = eased;
+      if (t < 1) {
+        rafIdRef.current = requestAnimationFrame(tick);
+      } else {
+        rafIdRef.current = null;
+        setInternalPhase("complete");
+        try {
+          window.localStorage.setItem(SEEN_FLAG_KEY, "1");
+        } catch {
+          // ignore — see startIntro returning-visitor branch
+        }
+      }
+    };
+    rafIdRef.current = requestAnimationFrame(tick);
+  }, [isReturningVisitor]);
+
+  // Skip — fast-forward to complete. Cancels the rAF, marks seen, and
+  // flips phase. Camera/jet snap to their final pose via the lerp in
+  // PersistentScene (no instant cut).
+  const skip = useCallback(() => {
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    progressRef.current = 1;
+    setInternalPhase("complete");
+    try {
+      window.localStorage.setItem(SEEN_FLAG_KEY, "1");
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Cleanup on unmount.
+  useEffect(() => {
+    return () => {
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
+    };
+  }, []);
+
+  const value = useMemo<IntroContextValue>(
+    () => ({
+      phase,
+      progressRef,
+      startIntro,
+      skip,
+      active: phase !== "complete",
+      isReturningVisitor,
+    }),
+    [phase, startIntro, skip, isReturningVisitor]
   );
+
+  return <IntroContext.Provider value={value}>{children}</IntroContext.Provider>;
 }
