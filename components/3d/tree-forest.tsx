@@ -6,22 +6,20 @@ import { Instances, Instance } from "@react-three/drei";
 import { sampleRidge } from "./mountain-landscape";
 
 /**
- * TreeForest — instanced conifer trees clinging to the foreground ridges.
+ * TreeForest — instanced conifers clinging to the foreground ridges.
  *
- * Rendered as a single InstancedMesh per Drei's <Instances>: one geometry,
- * one material, ~400 instances → 1 draw call. Ungrouped meshes here would
- * tank perf on the canyon scene, so instancing is a hard requirement.
+ * v2: two tree archetypes for silhouette variety —
+ *   • Type A: tall narrow spires (thinner, taller cone)
+ *   • Type B: shorter rounded conifers (slightly stouter, less tall)
+ * Each archetype gets its own <Instances> group so a single InstancedMesh
+ * is drawn per type — two draw calls total instead of one, but the
+ * silhouette payoff is large.
  *
- * Placement strategy: re-uses sampleRidge() from mountain-landscape so each
- * tree sits ON the ridge slope, not floating above an unseen surface. The
- * "altitude fraction" along the slope is randomized per tree, plus small
- * lateral / depth jitter so they don't form a perfect line. All trees use
- * the same dark conifer color — they read as silhouettes against the
- * slightly lighter ridge surface, and against the sunrise sky for the
- * trees that crest the ridge top.
+ * Placement re-uses sampleRidge() from mountain-landscape so each tree
+ * sits ON the ridge slope, not floating above an unseen surface.
  *
- * Tree count ~400 (200 per ridge) — within the perf budget; <Instances>
- * scales further if needed.
+ * Sunset rim-light is supplied by the supplemental directional + HDRI
+ * environment in HeroScene — no per-tree lighting tricks here.
  */
 
 function mulberry32(seed: number) {
@@ -37,9 +35,10 @@ type Tree = {
   position: [number, number, number];
   scale: [number, number, number];
   rotationY: number;
+  type: "spire" | "round";
 };
 
-const LEFT_SEED = 1337; // must match mountain-landscape ridge seed
+const LEFT_SEED = 1337;
 const RIGHT_SEED = 9001;
 
 function generateTreesForRidge(
@@ -47,8 +46,6 @@ function generateTreesForRidge(
   ridgeSeed: number,
   count: number
 ): Tree[] {
-  // Use a different seed for placement so trees don't always cluster at
-  // the same noise minima as the ridge silhouette.
   const placement = mulberry32(ridgeSeed + 17);
   const trees: Tree[] = [];
 
@@ -56,29 +53,30 @@ function generateTreesForRidge(
     const t = placement();
     const sample = sampleRidge(side, ridgeSeed, t);
 
-    // Altitude on the slope: avoid the bottom 10% (valley floor) and the
-    // top 8% (bald peak rocks read better without trees).
     const slopeFrac = 0.1 + placement() * 0.82;
     const treeY = sample.peakY * slopeFrac;
 
-    // X interpolates from inner-base to peakX as we climb the slope.
     const treeX = THREE.MathUtils.lerp(
       sample.xInner,
       sample.peakX,
       slopeFrac
     );
 
-    // Lateral + depth jitter so trees don't form a perfect line.
     const xJitter = (placement() - 0.5) * 1.5;
     const zJitter = (placement() - 0.5) * 2.4;
 
     const baseScale = 0.85 + placement() * 0.55;
     const heightScale = 0.85 + placement() * 0.5;
 
+    // ~65% spires, ~35% round — spires give the dominant pointed
+    // silhouette, round trees break up the uniformity.
+    const type: Tree["type"] = placement() < 0.65 ? "spire" : "round";
+
     trees.push({
       position: [treeX + xJitter, treeY, sample.z + zJitter],
       scale: [baseScale, baseScale * heightScale, baseScale],
       rotationY: placement() * Math.PI * 2,
+      type,
     });
   }
 
@@ -86,25 +84,60 @@ function generateTreesForRidge(
 }
 
 export function TreeForest({ count = 200 }: { count?: number }) {
-  const trees = useMemo(() => {
+  const { spires, rounds } = useMemo(() => {
     const left = generateTreesForRidge("left", LEFT_SEED, count);
     const right = generateTreesForRidge("right", RIGHT_SEED, count);
-    return [...left, ...right];
+    const all = [...left, ...right];
+    return {
+      spires: all.filter((t) => t.type === "spire"),
+      rounds: all.filter((t) => t.type === "round"),
+    };
   }, [count]);
 
   return (
-    <Instances limit={trees.length} range={trees.length} castShadow={false}>
-      {/* Six-sided cone — cheap geometry that reads as a conifer silhouette. */}
-      <coneGeometry args={[0.32, 1.6, 6]} />
-      <meshStandardMaterial color="#0A1208" flatShading roughness={0.95} />
-      {trees.map((tree, i) => (
-        <Instance
-          key={i}
-          position={tree.position}
-          scale={tree.scale}
-          rotation={[0, tree.rotationY, 0]}
-        />
-      ))}
-    </Instances>
+    <group name="tree-forest">
+      {/* Spires — tall narrow conifer silhouette. */}
+      {spires.length > 0 && (
+        <Instances limit={spires.length} range={spires.length} castShadow={false}>
+          <coneGeometry args={[0.28, 1.9, 6]} />
+          <meshStandardMaterial
+            color="#0A1208"
+            roughness={0.95}
+            metalness={0.0}
+            flatShading
+          />
+          {spires.map((tree, i) => (
+            <Instance
+              key={`s${i}`}
+              position={tree.position}
+              scale={tree.scale}
+              rotation={[0, tree.rotationY, 0]}
+            />
+          ))}
+        </Instances>
+      )}
+
+      {/* Rounds — shorter, stouter, slightly warmer-tinted dark green so
+          backlight catches the round volume distinctly from the spires. */}
+      {rounds.length > 0 && (
+        <Instances limit={rounds.length} range={rounds.length} castShadow={false}>
+          <coneGeometry args={[0.42, 1.2, 8]} />
+          <meshStandardMaterial
+            color="#0E140A"
+            roughness={0.93}
+            metalness={0.0}
+            flatShading
+          />
+          {rounds.map((tree, i) => (
+            <Instance
+              key={`r${i}`}
+              position={tree.position}
+              scale={tree.scale}
+              rotation={[0, tree.rotationY, 0]}
+            />
+          ))}
+        </Instances>
+      )}
+    </group>
   );
 }

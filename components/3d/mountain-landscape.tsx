@@ -5,27 +5,31 @@ import * as THREE from "three";
 import { createNoise2D } from "simplex-noise";
 
 /**
- * MountainLandscape — four-layer receding valley with two custom-geometry
- * foreground ridges and three depth-graded cone-peak layers.
+ * MountainLandscape — sunset-rim-lit four-layer canyon, v2.
  *
  *   Layer 1 (z 25 → -110):  jagged inner-face ridges flanking the camera.
- *                           Custom BufferGeometry, double-sided, darkest.
+ *                           Custom BufferGeometry, double-sided, very dark
+ *                           so the warm horizon silhouettes them.
  *   Layer 2 (z -80 → -150): mid-distance peaks, scattered cones.
- *   Layer 3 (z -150 → -220): far peaks, lighter so atmospheric perspective
- *                            reads correctly when fog blends them.
+ *   Layer 3 (z -150 → -220): far peaks, deeper-warm tone (atmospheric
+ *                            perspective bringing them toward sky color).
  *   Layer 4 (z -250 → -300): horizon range — large, low-detail, almost
- *                            merged with sunrise sky color via fog.
+ *                            merged with the warm horizon glow.
  *
- * All layers are static in world space — only the camera moves, so layered
- * parallax is implicit. Each layer is its own <group> so a perf pass can
- * toggle individual layers off via env flag if needed.
+ * v2 changes vs v1:
+ *   • Materials darken further — sunset wants silhouette, not mid-tone.
+ *   • Foreground ridge tessellation 80 → 128 segments for richer
+ *     silhouette detail when the sun rim-lights the top edge.
+ *   • Ridge geometry now includes UVs so a procedurally-generated rocky
+ *     normal map (DataTexture, no external asset) can disturb surface
+ *     micro-detail and respond to the HDRI environment lighting.
+ *   • Mid/far/horizon cones share the procedural normal map for surface
+ *     coherence across layers.
  *
  * RIDGES (layer 1):
- *   Constructed as a triangulated wall whose top edge is driven by 3 octaves
- *   of 1D simplex noise (sampled along Z). Two faces — inner (visible to
- *   camera, slopes from inner-base up to peak) and outer (back of ridge).
- *   Trees in tree-forest.tsx are placed using the same noise function so
- *   they sit ON the ridge surface, not floating above it.
+ *   Two faces — inner (visible to camera, slopes from inner-base up to
+ *   peak) and outer (back of ridge). Trees in tree-forest.tsx are placed
+ *   using the same noise function so they sit ON the ridge surface.
  */
 
 // Mulberry32 PRNG for deterministic mountain placement across HMR / SSR.
@@ -47,7 +51,7 @@ export const RIDGE_PARAMS = {
   xInnerFar: 16,
   xOuterNear: 30,
   xOuterFar: 35,
-  segments: 80,
+  segments: 128,
 } as const;
 
 export type RidgeSampleResult = {
@@ -58,14 +62,6 @@ export type RidgeSampleResult = {
   peakY: number;
 };
 
-/**
- * Sample the ridge silhouette at parameter t in [0, 1]. Used by both the
- * ridge geometry builder and the tree-placement code so trees stay glued
- * to the surface they're supposedly growing on.
- *
- * `side` controls reflection: peakX comes back signed (negative for left
- * ridge) so callers can plug it directly into world coordinates.
- */
 export function sampleRidge(
   side: "left" | "right",
   seed: number,
@@ -112,26 +108,34 @@ function createRidgeGeometry(
 ): THREE.BufferGeometry {
   const segments = RIDGE_PARAMS.segments;
   const positions: number[] = [];
+  const uvs: number[] = [];
   const indices: number[] = [];
 
   for (let i = 0; i <= segments; i++) {
     const t = i / segments;
     const s = sampleRidge(side, seed, t);
-    // Three vertices per cross-section: inner-base, peak, outer-base.
-    positions.push(s.xInner, 0, s.z); // 0
-    positions.push(s.peakX, s.peakY, s.z); // 1
-    positions.push(s.xOuter, 0, s.z); // 2
+    // Three vertices per cross-section: inner-base (0), peak (1), outer-base (2).
+    positions.push(s.xInner, 0, s.z);
+    positions.push(s.peakX, s.peakY, s.z);
+    positions.push(s.xOuter, 0, s.z);
+
+    // UVs — u walks along ridge length, v walks 0 (base) → 1 (peak).
+    // Repeat u every 8 segments so the rock detail texture tiles densely.
+    const u = (i / segments) * 16;
+    uvs.push(u, 0); // inner base
+    uvs.push(u, 1); // peak
+    uvs.push(u, 0); // outer base
   }
 
   for (let i = 0; i < segments; i++) {
     const base = i * 3;
     const next = (i + 1) * 3;
 
-    // Inner face (visible to camera) — winding chosen so normals face inward.
+    // Inner face (visible to camera) — winding for inward-facing normals.
     indices.push(base + 0, base + 1, next + 1);
     indices.push(base + 0, next + 1, next + 0);
 
-    // Outer face (back of ridge) — winding mirrored so normals face outward.
+    // Outer face (back of ridge) — winding mirrored for outward normals.
     indices.push(base + 1, base + 2, next + 2);
     indices.push(base + 1, next + 2, next + 1);
   }
@@ -141,13 +145,62 @@ function createRidgeGeometry(
     "position",
     new THREE.Float32BufferAttribute(positions, 3)
   );
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   geo.setIndex(indices);
   geo.computeVertexNormals();
   return geo;
 }
 
-// Scatter peaks (cones) within a band — push outward so the valley center
-// stays open and the camera sightline isn't blocked.
+/**
+ * Build a tileable rocky normal map procedurally — no external asset.
+ * Two octaves of simplex 2D noise, sampled as a height field, then
+ * gradient-differenced to produce per-pixel normals. Tangent-space
+ * convention: R=X, G=Y, B=Z (≈0.8 const for "mostly facing camera").
+ */
+function createProceduralRockNormal(size = 256, seed = 4242): THREE.DataTexture {
+  const noise = createNoise2D(mulberry32(seed));
+  const data = new Uint8Array(size * size * 4);
+
+  const height = (x: number, y: number) => {
+    // Two octaves — coarse + fine — wrap-safe by sampling sin/cos to make tileable.
+    const u = (x / size) * Math.PI * 2;
+    const v = (y / size) * Math.PI * 2;
+    const c1 = Math.cos(u);
+    const s1 = Math.sin(u);
+    const c2 = Math.cos(v);
+    const s2 = Math.sin(v);
+    const a = noise(c1 * 1.4, s1 * 1.4) + noise(c2 * 1.4, s2 * 1.4);
+    const b = noise(c1 * 4.2 + 17, s1 * 4.2 + 11) + noise(c2 * 4.2 + 7, s2 * 4.2 + 5);
+    return a * 0.7 + b * 0.35;
+  };
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      // Central differences for the gradient — strength controls bumpiness.
+      const strength = 0.55;
+      const dx = (height((x + 1) % size, y) - height((x - 1 + size) % size, y)) * strength;
+      const dy = (height(x, (y + 1) % size) - height(x, (y - 1 + size) % size)) * strength;
+      // Normal in tangent space: encoded into [0..1] then scaled to 0..255.
+      const nx = -dx * 0.5 + 0.5;
+      const ny = -dy * 0.5 + 0.5;
+      const nz = 0.85;
+      data[i + 0] = Math.max(0, Math.min(255, Math.round(nx * 255)));
+      data[i + 1] = Math.max(0, Math.min(255, Math.round(ny * 255)));
+      data[i + 2] = Math.max(0, Math.min(255, Math.round(nz * 255)));
+      data[i + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 type PeakSpec = {
   position: [number, number, number];
   height: number;
@@ -171,13 +224,11 @@ function generatePeaks(
   const peaks: PeakSpec[] = [];
   for (let i = 0; i < count; i++) {
     const z = THREE.MathUtils.lerp(zNear, zFar, rand());
-    // Pick x sign first, then bias outward to keep the valley center clear.
     const sign = rand() > 0.5 ? 1 : -1;
     const xMag = centerKeepout + rand() * (xRange - centerKeepout);
     const x = sign * xMag;
     const height = THREE.MathUtils.lerp(heightMin, heightMax, rand());
     const radius = height * radiusFactor;
-    // Cone is centered at its midpoint by default — lift so base sits at y=0.
     peaks.push({
       position: [x, height / 2, z],
       height,
@@ -191,6 +242,7 @@ function generatePeaks(
 export function MountainLandscape() {
   const leftRidge = useMemo(() => createRidgeGeometry("left", 1337), []);
   const rightRidge = useMemo(() => createRidgeGeometry("right", 9001), []);
+  const rockNormal = useMemo(() => createProceduralRockNormal(256, 4242), []);
 
   const midPeaks = useMemo(
     () => generatePeaks(2024, 6, -80, -150, 55, 18, 12, 25, 0.55, 8),
@@ -205,44 +257,71 @@ export function MountainLandscape() {
     []
   );
 
-  // Materials shared per layer — fewer state changes, easier to tune.
+  // Materials shared per layer. v2 darkens significantly so the warm
+  // sunset sky silhouettes the mountains. Sunset rim light from the
+  // supplemental directional in HeroScene is what tells the eye these
+  // are 3D objects, not flat cutouts.
   const groundMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: "#0F0B08", roughness: 0.95 }),
-    []
-  );
-  const ridgeMat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        color: "#1F1612",
-        roughness: 0.95,
-        flatShading: true,
-        side: THREE.DoubleSide,
+        color: "#06040A",
+        roughness: 1.0,
+        metalness: 0.0,
       }),
     []
   );
-  const midMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: "#2A1F18",
-        roughness: 0.9,
-        flatShading: true,
-      }),
-    []
-  );
-  const farMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: "#3D2E22",
-        roughness: 0.85,
-        flatShading: true,
-      }),
-    []
-  );
+  const ridgeMat = useMemo(() => {
+    // Clone the rock normal per layer so we can tune repeat per surface
+    // without mutating the shared texture.
+    const n = rockNormal.clone();
+    n.repeat.set(1, 1);
+    n.wrapS = n.wrapT = THREE.RepeatWrapping;
+    n.needsUpdate = true;
+    return new THREE.MeshStandardMaterial({
+      color: "#0A0710",
+      roughness: 0.98,
+      metalness: 0.02,
+      normalMap: n,
+      normalScale: new THREE.Vector2(1.4, 1.4),
+      side: THREE.DoubleSide,
+    });
+  }, [rockNormal]);
+  const midMat = useMemo(() => {
+    const n = rockNormal.clone();
+    n.repeat.set(2, 2);
+    n.wrapS = n.wrapT = THREE.RepeatWrapping;
+    n.needsUpdate = true;
+    return new THREE.MeshStandardMaterial({
+      color: "#15080A",
+      roughness: 0.95,
+      metalness: 0.0,
+      normalMap: n,
+      normalScale: new THREE.Vector2(1.0, 1.0),
+      flatShading: false,
+    });
+  }, [rockNormal]);
+  const farMat = useMemo(() => {
+    const n = rockNormal.clone();
+    n.repeat.set(2, 2);
+    n.wrapS = n.wrapT = THREE.RepeatWrapping;
+    n.needsUpdate = true;
+    return new THREE.MeshStandardMaterial({
+      color: "#321318",
+      roughness: 0.92,
+      metalness: 0.0,
+      normalMap: n,
+      normalScale: new THREE.Vector2(0.6, 0.6),
+      flatShading: false,
+    });
+  }, [rockNormal]);
   const horizonMat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        color: "#5C3920",
-        roughness: 0.85,
+        // Warmest of the four — atmospheric perspective fades these
+        // peaks toward the horizon glow color.
+        color: "#5C2820",
+        roughness: 0.9,
+        metalness: 0.0,
         flatShading: true,
       }),
     []
@@ -250,19 +329,20 @@ export function MountainLandscape() {
 
   return (
     <group name="mountain-landscape">
-      {/* Valley floor — flat dark plane. Sits at y=0 across the visible scene. */}
+      {/* Valley floor — flat near-black plane, sits at y=0 across the scene. */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, 0, -100]}
         material={groundMat}
+        receiveShadow
       >
         <planeGeometry args={[600, 500]} />
       </mesh>
 
       {/* Layer 1 — foreground ridges (custom geometry, tree-bearing). */}
       <group name="layer-1-foreground">
-        <mesh geometry={leftRidge} material={ridgeMat} />
-        <mesh geometry={rightRidge} material={ridgeMat} />
+        <mesh geometry={leftRidge} material={ridgeMat} castShadow receiveShadow />
+        <mesh geometry={rightRidge} material={ridgeMat} castShadow receiveShadow />
       </group>
 
       {/* Layer 2 — mid-distance peaks. */}
