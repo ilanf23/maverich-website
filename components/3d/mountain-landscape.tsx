@@ -268,7 +268,7 @@ export function MountainLandscape() {
   const groundMat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        color: "#06040A",
+        color: "#070A0C",
         roughness: 1.0,
         metalness: 0.0,
       }),
@@ -282,7 +282,7 @@ export function MountainLandscape() {
     n.wrapS = n.wrapT = THREE.RepeatWrapping;
     n.needsUpdate = true;
     return new THREE.MeshStandardMaterial({
-      color: "#0A0710",
+      color: "#0E1A18",
       roughness: 0.98,
       metalness: 0.02,
       normalMap: n,
@@ -296,7 +296,7 @@ export function MountainLandscape() {
     n.wrapS = n.wrapT = THREE.RepeatWrapping;
     n.needsUpdate = true;
     return new THREE.MeshStandardMaterial({
-      color: "#15080A",
+      color: "#1A2A28",
       roughness: 0.95,
       metalness: 0.0,
       normalMap: n,
@@ -310,7 +310,7 @@ export function MountainLandscape() {
     n.wrapS = n.wrapT = THREE.RepeatWrapping;
     n.needsUpdate = true;
     return new THREE.MeshStandardMaterial({
-      color: "#321318",
+      color: "#2F4A4A",
       roughness: 0.92,
       metalness: 0.0,
       normalMap: n,
@@ -323,7 +323,7 @@ export function MountainLandscape() {
       new THREE.MeshStandardMaterial({
         // Warmest of the four — atmospheric perspective fades these
         // peaks toward the horizon glow color.
-        color: "#5C2820",
+        color: "#3A5060",
         roughness: 0.9,
         metalness: 0.0,
         flatShading: true,
