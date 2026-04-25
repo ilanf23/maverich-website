@@ -226,13 +226,18 @@ export const MaverichJet = forwardRef<THREE.Group, Props>(function MaverichJet(
         <boxGeometry args={[0.7, 0.6, 4]} />
       </mesh>
 
-      {/* Nose cone — tapers forward into +Z */}
+      {/* Nose cone — apex points forward (+Z), base joins the fuselage.
+          Three.js cones default to apex at +Y; +π/2 rotation around X
+          maps +Y → +Z so the pointy end leads the jet. (The previous
+          -π/2 rotation reversed this, presenting the flat base to the
+          camera so the front read as an engine bell — making the jet
+          look like it was flying tail-first.) */}
       <mesh
         position={[0, 0, 2.5]}
-        rotation={[-Math.PI / 2, 0, 0]}
+        rotation={[Math.PI / 2, 0, 0]}
         material={bodyMat}
       >
-        <coneGeometry args={[0.35, 1, 16]} />
+        <coneGeometry args={[0.35, 1.2, 16]} />
       </mesh>
 
       {/* Cockpit canopy — top half-sphere, elongated along the fuselage */}
