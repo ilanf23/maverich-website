@@ -6,34 +6,37 @@ import { useEffect, useMemo, useRef, forwardRef } from "react";
 import * as THREE from "three";
 
 /**
- * MaverichJet — real GLB model, Phase 4.2.14b realism hotfix.
+ * MaverichJet — real F-18 GLB, Phase 4.2.14d realism upgrade.
  *
- * The procedural box-and-cone fuselage from v1/v2 has been replaced by a
- * compact CC-BY 3.0 jet GLB ("Jet" by Poly by Google, ~78 KB, 4 separated
- * materials: body / canopy / engines / wings). Attribution lives in
- * `public/models/CREDITS.md` and is required by the license.
+ * Replaces the 78 KB Poly-by-Google placeholder with an ~8 MB CGTrader
+ * F-18 (Royalty-Free Standard, commercial use OK), Draco-compressed,
+ * full PBR (BaseColor + Normal + MetallicRoughness + Occlusion). Two
+ * materials: `F18` (airframe) and `F18_Glass` (canopy, alpha BLEND).
  *
- * The loaded model has its nose at local +Z and an unscaled fuselage
- * length of ~10 units along Z. We apply a scale that normalises the
- * fuselage to ~4 units along Z so the rest of the scene's camera framing
- * and the parent group's scroll-driven scale (0.6 → 1.4) keep working
- * without changes. All overlay positions (afterburners, M call-sign,
- * wingtip sparkles) are then in the same local frame the procedural jet
- * used, so persistent-scene.tsx's keyframe table is untouched.
+ * Two model-specific frame conventions need to be reconciled with the
+ * scene's keyframe table (which assumes nose at local +Z, fuselage
+ * span ~4 units along Z):
  *
- * Material augmentation: the loaded scene is traversed once on mount;
- * MeshStandardMaterials get a metalness bump + envMapIntensity boost so
- * the HDRI sunset env (set up in persistent-scene.tsx) actually catches
- * a reflection on the airframe. Without this the loaded model reads as
- * flat-shaded plastic under the post-process pipeline.
+ *   1. The CGTrader F-18 ships with nose along local +X. We rotate the
+ *      cloned scene by -90° around Y so its forward axis becomes +Z.
+ *      This rotation is applied BEFORE the bbox probe so the auto-fit
+ *      math sees the rotated extents.
+ *
+ *   2. Auto-fit uses the LONGEST bbox axis (not just Z) to compute
+ *      scale, so a wrong rotation guess can't produce a tiny or giant
+ *      jet — it just renders sideways, which is visually obvious.
+ *
+ * Material tuning is keyed off material name. Body gets a slight
+ * envMapIntensity bump so the HDRI sunset reflects on the airframe;
+ * canopy gets smoked + faint amber emissive for the bloom pass to grab.
  */
 
 useGLTF.preload("/models/maverich-jet.glb");
 
-// Target fuselage length in local units. Matches the procedural jet's
-// extent so the existing camera + scroll choreography keeps framing the
-// jet identically.
-const TARGET_LENGTH_Z = 4.0;
+// Target longest-axis length in local units. Matches the procedural
+// jet's extent so the existing camera + scroll choreography frames
+// the jet identically to v1/v2.
+const TARGET_LENGTH = 4.0;
 
 type Props = {
   glowIntensityRef?: React.MutableRefObject<number>;
@@ -49,17 +52,23 @@ export const MaverichJet = forwardRef<THREE.Group, Props>(function MaverichJet(
   // material mutations don't bleed into Drei's internal cache.
   const cloned = useMemo(() => scene.clone(true), [scene]);
 
-  // One-time bounding-box probe + auto-scale + material tuning.
   useEffect(() => {
+    // Align CGTrader F-18 (nose at +X by default) to scene convention
+    // (nose at +Z). Apply rotation BEFORE the bbox probe so auto-fit
+    // and centering operate on the rotated extents.
+    cloned.rotation.set(0, -Math.PI / 2, 0);
+    cloned.updateMatrixWorld(true);
+
     const bbox = new THREE.Box3().setFromObject(cloned);
     const size = new THREE.Vector3();
     bbox.getSize(size);
-    const lengthZ = Math.max(size.z, 0.001);
-    const s = TARGET_LENGTH_Z / lengthZ;
+    const longest = Math.max(size.x, size.y, size.z, 0.001);
+    const s = TARGET_LENGTH / longest;
     cloned.scale.setScalar(s);
 
-    // Re-center along Z so the fuselage midpoint sits at z=0 in the
-    // parent group's local frame (matches the procedural jet's centring).
+    // Re-center so the model's bbox midpoint sits at the parent group's
+    // origin. center is in pre-scale world coords; multiply by s to
+    // convert to the post-scale offset that needs to be subtracted.
     const center = new THREE.Vector3();
     bbox.getCenter(center);
     cloned.position.set(-center.x * s, -center.y * s, -center.z * s);
@@ -70,37 +79,24 @@ export const MaverichJet = forwardRef<THREE.Group, Props>(function MaverichJet(
         child.material instanceof THREE.MeshStandardMaterial
       ) {
         const mat = child.material as THREE.MeshStandardMaterial;
-        // Material names in this GLB are hex colour codes — use them to
-        // route per-part tuning without depending on mesh hierarchy.
         const name = (mat.name || "").toUpperCase();
 
-        if (name === "80DEEA") {
-          // Cockpit canopy — smoked glass with a faint amber emissive so
-          // the bloom pass picks up the sun-glint moment.
+        if (name === "F18_GLASS") {
+          // Cockpit canopy — smoked, highly reflective, faint amber
+          // emissive so the bloom pass picks up a sun-glint moment
+          // during the heroic pass.
           mat.color = new THREE.Color("#0F1A2A");
-          mat.metalness = 0.85;
-          mat.roughness = 0.08;
+          mat.metalness = 0.9;
+          mat.roughness = 0.06;
           mat.emissive = new THREE.Color("#FFA855");
-          mat.emissiveIntensity = 0.22;
+          mat.emissiveIntensity = 0.18;
           mat.transparent = true;
-          mat.opacity = 0.86;
-          mat.envMapIntensity = 2.0;
-        } else if (name === "1A1A1A") {
-          // Engines / dark vents — keep dark, low metalness so they read
-          // as holes in the silhouette under the HDRI.
-          mat.metalness = 0.1;
-          mat.roughness = 0.85;
-          mat.envMapIntensity = 0.3;
-        } else if (name === "78909C") {
-          // Wing/light-grey panels — bias toward brushed metal so the
-          // sun catches a bright leading-edge rim during the heroic pass.
-          mat.metalness = 0.7;
-          mat.roughness = 0.38;
-          mat.envMapIntensity = 1.6;
+          mat.opacity = 0.82;
+          mat.envMapIntensity = 2.2;
         } else {
-          // Default body — armoured metal.
-          mat.metalness = 0.65;
-          mat.roughness = 0.42;
+          // F18 airframe — already PBR-textured. We just bump
+          // envMapIntensity so the HDRI sunset wraps the metal panels,
+          // and ensure shadows are on.
           mat.envMapIntensity = 1.4;
         }
         mat.needsUpdate = true;
@@ -134,9 +130,12 @@ export const MaverichJet = forwardRef<THREE.Group, Props>(function MaverichJet(
       <primitive object={cloned} />
 
       {/* Twin afterburners — emissive cylinders + halo point lights at
-          the rear of the fuselage. Positions are in the post-scale local
-          frame: fuselage spans z=-2 to z=+2, so engines sit at z=-2.1. */}
-      <mesh position={[-0.3, 0, -2.1]} rotation={[Math.PI / 2, 0, 0]}>
+          the rear of the fuselage. Coords are in the post-scale local
+          frame: longest axis spans z=-2 to z=+2 after auto-fit, so the
+          burner cones sit just behind the tail at z=-2.1. The F-18's
+          twin engine spread (~0.3 unit at scale 4/17.1m) puts the
+          burners at x=±0.35. */}
+      <mesh position={[-0.35, 0, -2.1]} rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[0.22, 0.16, 0.5, 16]} />
         <meshStandardMaterial
           ref={burnerLeft}
@@ -147,7 +146,7 @@ export const MaverichJet = forwardRef<THREE.Group, Props>(function MaverichJet(
           roughness={0.7}
         />
       </mesh>
-      <mesh position={[0.3, 0, -2.1]} rotation={[Math.PI / 2, 0, 0]}>
+      <mesh position={[0.35, 0, -2.1]} rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[0.22, 0.16, 0.5, 16]} />
         <meshStandardMaterial
           ref={burnerRight}
@@ -161,22 +160,22 @@ export const MaverichJet = forwardRef<THREE.Group, Props>(function MaverichJet(
 
       <pointLight
         ref={burnerLightLeft}
-        position={[-0.3, 0, -2.5]}
+        position={[-0.35, 0, -2.5]}
         color="#FFB347"
         intensity={1.2}
         distance={6}
       />
       <pointLight
         ref={burnerLightRight}
-        position={[0.3, 0, -2.5]}
+        position={[0.35, 0, -2.5]}
         color="#FFB347"
         intensity={1.2}
         distance={6}
       />
 
       {/* M call-sign — front of the fuselage, just above the nose. The
-          loaded model's nose sits at ~z=2.0 after scaling; the text
-          floats at z=2.05 so it reads against the airframe without
+          loaded model's nose sits near z=+2 after auto-fit; the text
+          floats at z=2.05 to read against the airframe without
           z-fighting. Outline color is brand amber so bloom catches it. */}
       <Text
         position={[0, 0.05, 2.05]}
@@ -191,11 +190,13 @@ export const MaverichJet = forwardRef<THREE.Group, Props>(function MaverichJet(
         M
       </Text>
 
-      {/* Wingtip vapor vortices — amber-tinted Sparkles at the loaded
-          model's measured wingtip extent (x ≈ ±1.3 after scale 0.4 on
-          a model whose wings span ±3.23 native). */}
+      {/* Wingtip vapor vortices — amber-tinted Sparkles approximating
+          the F/A-18 wingspan-to-length ratio (12.3m / 17.1m ≈ 0.72) at
+          our normalized length 4 → wingspan ~2.88, so wingtips ≈ ±1.44.
+          We drift slightly outboard to ±1.5 so the vortex trails read
+          as cleanly outside the wingtip. */}
       <Sparkles
-        position={[-1.3, -0.05, -0.4]}
+        position={[-1.5, -0.05, -0.4]}
         count={36}
         scale={[0.6, 0.3, 1.6]}
         size={2.4}
@@ -204,7 +205,7 @@ export const MaverichJet = forwardRef<THREE.Group, Props>(function MaverichJet(
         opacity={0.7}
       />
       <Sparkles
-        position={[1.3, -0.05, -0.4]}
+        position={[1.5, -0.05, -0.4]}
         count={36}
         scale={[0.6, 0.3, 1.6]}
         size={2.4}
