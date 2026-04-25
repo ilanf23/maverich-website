@@ -486,7 +486,7 @@ export function PersistentScene() {
         <SkyAtmosphere sunRef={setSunMesh} />
         <MountainLandscape />
         <CloudSea />
-        <TreeForest count={200} />
+        <TreeForest count={400} />
       </group>
 
       {/* The jet — driven by SceneAnimator. Lives outside the canyon
