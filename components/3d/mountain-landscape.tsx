@@ -87,11 +87,15 @@ export function sampleRidge(
     peakOffset
   );
 
-  // 3 octaves of noise → jagged silhouette
+  // 4 octaves of noise → sharper, taller PNW-alpine silhouette.
+  // Higher base + bigger octave-1 amplitude makes the ridges feel
+  // genuinely vertical rather than rolling. Octave 4 adds the high-frequency
+  // "broken" feel of real granite.
   const h1 = noise2(t * 3, seed * 0.007) * 0.5 + 0.5;
   const h2 = noise2(t * 8, seed * 0.013) * 0.5 + 0.5;
   const h3 = noise2(t * 16, seed * 0.021) * 0.5 + 0.5;
-  const peakY = 8 + h1 * 6 + h2 * 2.5 + h3 * 1.0;
+  const h4 = noise2(t * 32, seed * 0.031) * 0.5 + 0.5;
+  const peakY = 14 + h1 * 9 + h2 * 3.5 + h3 * 1.4 + h4 * 0.6;
 
   return {
     z,
