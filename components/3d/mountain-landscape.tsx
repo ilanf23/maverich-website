@@ -286,7 +286,6 @@ export function MountainLandscape() {
     []
   );
   const ridgeMat = useMemo(() => {
-    // Configure all four PBR maps for ridge-length tiling.
     [ridgeTextures.map, ridgeTextures.normalMap, ridgeTextures.roughnessMap, ridgeTextures.aoMap].forEach(
       (tex) => {
         tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -294,7 +293,7 @@ export function MountainLandscape() {
         tex.anisotropy = 8;
       }
     );
-    return new THREE.MeshStandardMaterial({
+    const m = new THREE.MeshStandardMaterial({
       map: ridgeTextures.map,
       normalMap: ridgeTextures.normalMap,
       normalScale: new THREE.Vector2(1.6, 1.6),
@@ -307,6 +306,41 @@ export function MountainLandscape() {
       // Cool tint pulls the rock toward the morning sky color.
       color: "#8AA0A8",
     });
+    // Snow caps — inject world-space Y and normal-up varyings, then
+    // blend toward white snow albedo when (a) altitude is high enough
+    // AND (b) the surface is roughly up-facing. No extra geometry.
+    m.onBeforeCompile = (shader) => {
+      shader.uniforms.uSnowAltitude = { value: 18.0 };
+      shader.uniforms.uSnowAltitudeRange = { value: 4.0 };
+      shader.uniforms.uSnowSlopeBias = { value: 0.65 };
+
+      shader.vertexShader =
+        "varying vec3 vWorldPosNormal;\nvarying float vWorldY;\n" +
+        shader.vertexShader.replace(
+          "#include <fog_vertex>",
+          `
+            #include <fog_vertex>
+            vec4 wp = modelMatrix * vec4(transformed, 1.0);
+            vWorldY = wp.y;
+            vWorldPosNormal = normalize(mat3(modelMatrix) * objectNormal);
+          `
+        );
+
+      shader.fragmentShader =
+        "uniform float uSnowAltitude;\nuniform float uSnowAltitudeRange;\nuniform float uSnowSlopeBias;\nvarying vec3 vWorldPosNormal;\nvarying float vWorldY;\n" +
+        shader.fragmentShader.replace(
+          "#include <fog_fragment>",
+          `
+            float altMix = smoothstep(uSnowAltitude - uSnowAltitudeRange, uSnowAltitude + uSnowAltitudeRange, vWorldY);
+            float slopeMix = smoothstep(uSnowSlopeBias, 1.0, vWorldPosNormal.y);
+            float snow = altMix * slopeMix;
+            vec3 snowAlbedo = vec3(0.96, 0.96, 0.94);
+            gl_FragColor.rgb = mix(gl_FragColor.rgb, snowAlbedo, snow * 0.85);
+            #include <fog_fragment>
+          `
+        );
+    };
+    return m;
   }, [ridgeTextures]);
   const midMat = useMemo(() => {
     return new THREE.MeshStandardMaterial({
