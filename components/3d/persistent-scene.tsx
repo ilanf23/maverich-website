@@ -466,7 +466,7 @@ export function PersistentScene() {
           ref drives mutation; we never reach into useThree().scene.fog
           for the same animation, which would be a hook-immutability
           violation. */}
-      <fog ref={fogRef} attach="fog" args={["#8B3B1F", 35, 240]} />
+      <fog ref={fogRef} attach="fog" args={["#7A8C9C", 35, 240]} />
 
       {/* HDRI sunset environment — global IBL. background={false} keeps
           our shader sky as the visible sky; env only contributes lighting
@@ -475,14 +475,14 @@ export function PersistentScene() {
       <Environment preset="sunset" background={false} environmentIntensity={0.7} />
 
       {/* Faint warm fill so shadow valleys never go fully black. */}
-      <ambientLight intensity={0.1} color="#5C2820" />
+      <ambientLight intensity={0.12} color="#34404C" />
 
       {/* Key sun light — low angle, warm color, behind the camera-facing
           scene direction. Sunset backlighting in one directional. */}
       <directionalLight
         position={[-30, 8, -20]}
-        intensity={2.5}
-        color="#FF7B3C"
+        intensity={2.4}
+        color="#F4D2A6"
       />
 
       {/* Canyon environment — sky + mountains + trees. Wrapped in a
