@@ -20,6 +20,7 @@ import { TreeForest } from "./tree-forest";
 import { SkyAtmosphere } from "./sky-atmosphere";
 import { CloudSea } from "./cloud-sea";
 import { useIntro } from "../providers/intro-provider";
+import { useLowFidelityMode } from "../hooks/use-low-fidelity-mode";
 
 /**
  * PersistentScene — page-wide 3D world for Phase 4 v2.
@@ -451,6 +452,7 @@ export function PersistentScene() {
 
   const [sunMesh, setSunMesh] = useState<THREE.Mesh | null>(null);
   const { mousePosRef, enabledRef: parallaxEnabledRef } = useMouseParallax();
+  const lowFi = useLowFidelityMode();
 
   return (
     <CanvasProvider frameloop="always" className="absolute inset-0">
@@ -486,7 +488,7 @@ export function PersistentScene() {
         <SkyAtmosphere sunRef={setSunMesh} />
         <MountainLandscape />
         <CloudSea />
-        <TreeForest count={400} />
+        <TreeForest count={lowFi ? 150 : 400} />
       </group>
 
       {/* The jet — driven by SceneAnimator. Lives outside the canyon

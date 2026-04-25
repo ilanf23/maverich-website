@@ -4,6 +4,7 @@ import { useFrame } from "@react-three/fiber";
 import { useMemo } from "react";
 import * as THREE from "three";
 import { usePrefersReducedMotion } from "@/components/hooks/use-prefers-reduced-motion";
+import { useLowFidelityMode } from "@/components/hooks/use-low-fidelity-mode";
 
 /**
  * CloudSea — three stacked horizontal planes between ridge bases (y=0)
@@ -97,15 +98,16 @@ type CloudSeaProps = {
 
 export function CloudSea({ sunDir = [0.6, -0.4] }: CloudSeaProps) {
   const reducedMotion = usePrefersReducedMotion();
+  const lowFi = useLowFidelityMode();
 
-  const layers = useMemo(
-    () => [
+  const layers = useMemo(() => {
+    const all = [
       { y: 1.4, opacity: 0.55, scale: 1.0, topColor: "#F4DAB4", bottomColor: "#5A6878" },
       { y: 1.8, opacity: 0.45, scale: 0.85, topColor: "#F8E0BA", bottomColor: "#6A7888" },
       { y: 2.2, opacity: 0.35, scale: 0.7, topColor: "#FFE6C2", bottomColor: "#7A8898" },
-    ],
-    []
-  );
+    ];
+    return lowFi ? [all[0]] : all;
+  }, [lowFi]);
 
   const materials = useMemo(
     () =>
