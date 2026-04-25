@@ -2,6 +2,12 @@
 
 import { useEffect, useRef } from "react";
 import Lenis from "lenis";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+
+if (typeof window !== "undefined") {
+  gsap.registerPlugin(ScrollTrigger);
+}
 
 export function LenisProvider({ children }: { children: React.ReactNode }) {
   const lenisRef = useRef<Lenis | null>(null);
@@ -22,15 +28,16 @@ export function LenisProvider({ children }: { children: React.ReactNode }) {
 
     lenisRef.current = lenis;
 
-    let rafId = 0;
-    function raf(time: number) {
-      lenis.raf(time);
-      rafId = requestAnimationFrame(raf);
-    }
-    rafId = requestAnimationFrame(raf);
+    // Drive Lenis off GSAP's ticker so Lenis frames and ScrollTrigger's scrub
+    // share a clock. Without this, pinned sections can flicker during smooth
+    // scroll because they read positions from a different frame than Lenis.
+    lenis.on("scroll", ScrollTrigger.update);
+    const tick = (time: number) => lenis.raf(time * 1000);
+    gsap.ticker.add(tick);
+    gsap.ticker.lagSmoothing(0);
 
     return () => {
-      cancelAnimationFrame(rafId);
+      gsap.ticker.remove(tick);
       lenis.destroy();
       lenisRef.current = null;
     };
