@@ -16,12 +16,13 @@ const REVEAL_EASE = [0.16, 1, 0.3, 1] as const;
 /**
  * SiteHeader — fixed overlay with the Maverich wordmark and anchor links.
  *
- * v2: wholly hidden during the intro animation. Fades in once
- * IntroProvider reports phase === "complete" with the brief's 0.3s lead.
+ * v2: hidden during the cinematic intro. Fades in 0.3s after IntroProvider
+ * reports phase === "complete" so the header lands as part of the staged
+ * UI reveal, not before the cinematic resolves.
  *
  * After reveal, gains a subtle backdrop-blur + hairline border once the
- * user scrolls past 100px, so it recedes into the hero on first paint
- * and hardens into a chrome bar everywhere else.
+ * user scrolls past 100px — it recedes into the hero on first paint and
+ * hardens into a chrome bar everywhere else.
  */
 export function SiteHeader() {
   const { scrollY } = useScroll();

@@ -10,9 +10,10 @@ import { useIntro } from "@/components/providers/intro-provider";
  *
  * Hidden:
  *   • Under prefers-reduced-motion (pure decoration; native scrollbar
- *     already communicates page position)
- *   • During the intro animation (no scroll possible; bar would be a
- *     fixed zero-width stub anyway, but we hide it for visual cleanness)
+ *     already communicates page position).
+ *   • During the intro animation (no scroll possible; the bar would be
+ *     a fixed zero-width stub anyway, but we hide it for visual
+ *     cleanness alongside the rest of the chrome reveal).
  */
 export function ScrollProgress() {
   const reduced = useReducedMotion();
