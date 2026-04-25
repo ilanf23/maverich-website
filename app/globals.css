@@ -1,0 +1,100 @@
+@import "tailwindcss";
+@config "../tailwind.config.ts";
+
+@layer base {
+  :root {
+    /* Background */
+    --bg-deep: #0A0A0B;
+    --bg-elevated: #141416;
+
+    /* Ink */
+    --ink-primary: #F5F2EC;
+    --ink-secondary: #A09C95;
+    --ink-muted: #5A5650;
+
+    /* Accent */
+    --accent-amber: #E8B547;
+    --accent-amber-glow: #F5C97D;
+
+    /* Cool counterpart (rim light, secondary glints) */
+    --accent-cool: #6B9DFF;
+
+    /* Surfaces */
+    --surface-glass: rgba(245, 242, 236, 0.04);
+    --border-subtle: rgba(245, 242, 236, 0.08);
+
+    /* Atmospheric tints (for haze fills, gradients) */
+    --warm-haze: #3D2818;
+    --warm-haze-bright: #5C3920;
+    --cool-haze: #1A2435;
+    --cool-haze-bright: #243A55;
+
+    /* Motion — easings */
+    --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+    --ease-camera: cubic-bezier(0.65, 0, 0.35, 1);
+    --ease-micro: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+    /* Motion — durations */
+    --dur-instant: 80ms;
+    --dur-quick: 200ms;
+    --dur-base: 400ms;
+    --dur-emphatic: 800ms;
+    --dur-cinematic: 1400ms;
+  }
+
+  html {
+    background-color: var(--bg-deep);
+    color: var(--ink-primary);
+    font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: var(--bg-deep);
+    color: var(--ink-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background-color: var(--accent-amber);
+    color: var(--bg-deep);
+  }
+
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}
+
+/* Lenis smooth scroll — required hooks */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+/* Reduced motion — mandatory across the brand */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
