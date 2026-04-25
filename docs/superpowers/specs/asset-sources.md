@@ -20,3 +20,9 @@ All assets downloaded for the `mountains` branch hero scene, with their license 
 ## Tree assets
 
 (populated during Phase C — currently using procedural CanvasTexture impostors, no external asset)
+
+## Mountain backdrop photo
+
+| Local path | Source | License | Notes |
+| --- | --- | --- | --- |
+| `public/textures/mountain-backdrop.jpg` | Pexels photo 2518891 | Pexels License (free for commercial use, no attribution required) | https://www.pexels.com/photo/mountain-covered-with-trees-under-blue-sky-2518891/ — used as the photoreal mountain world after the procedural 3D scene was abandoned in favor of a single backdrop plane. |

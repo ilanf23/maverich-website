@@ -15,12 +15,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CanvasProvider } from "./canvas-provider";
 import { MaverichJet } from "./maverich-jet";
-import { MountainLandscape } from "./mountain-landscape";
-import { TreeForest } from "./tree-forest";
-import { SkyAtmosphere } from "./sky-atmosphere";
-import { CloudSea } from "./cloud-sea";
+import { MountainBackdrop } from "./mountain-backdrop";
 import { useIntro } from "../providers/intro-provider";
-import { useLowFidelityMode } from "../hooks/use-low-fidelity-mode";
 
 /**
  * PersistentScene — page-wide 3D world for Phase 4 v2.
@@ -452,7 +448,6 @@ export function PersistentScene() {
 
   const [sunMesh, setSunMesh] = useState<THREE.Mesh | null>(null);
   const { mousePosRef, enabledRef: parallaxEnabledRef } = useMouseParallax();
-  const lowFi = useLowFidelityMode();
 
   return (
     <CanvasProvider frameloop="always" className="absolute inset-0">
@@ -482,13 +477,29 @@ export function PersistentScene() {
         color="#F4D2A6"
       />
 
-      {/* Canyon environment — sky + mountains + trees. Wrapped in a
-          group whose opacity/visibility tracks scroll past the hero. */}
+      {/* Canyon environment — now a single photoreal backdrop plane. The
+          procedural 3D world (HDRI sky, cloud-sea shader, ridge geometry,
+          impostor trees) was abandoned in favor of a real CC0 cloud-forest
+          photograph because no real-time procedural pipeline credibly hits
+          the photoreal bar. Wrapped in a group whose opacity/visibility
+          tracks scroll past the hero — the existing canyon fade still
+          fades the backdrop out the same way. */}
       <group ref={canyonGroupRef} name="canyon-environment">
-        <SkyAtmosphere sunRef={setSunMesh} />
-        <MountainLandscape />
-        <CloudSea />
-        <TreeForest count={lowFi ? 150 : 400} />
+        <MountainBackdrop />
+        {/* Hidden sun emitter — only here to satisfy the GodRays effect's
+            emitter requirement. The photo backdrop occludes it so GodRays
+            effectively produces no rays; the photo's own atmospheric
+            haze does the job. Kept to avoid restructuring the post-fx
+            chain (which the parallel jet session may depend on). */}
+        <mesh
+          ref={(m) => {
+            if (m) setSunMesh(m);
+          }}
+          position={[0, 0, -310]}
+        >
+          <sphereGeometry args={[1, 8, 8]} />
+          <meshBasicMaterial color="#000000" toneMapped={false} fog={false} />
+        </mesh>
       </group>
 
       {/* The jet — driven by SceneAnimator. Lives outside the canyon
