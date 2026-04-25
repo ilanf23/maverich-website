@@ -1,20 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Maverich call sign — stylized M against warm sunrise altitude">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Maverich call sign — stylized M against a sunrise canyon valley">
   <defs>
-    <radialGradient id="warm-haze" cx="50%" cy="20%" r="70%">
-      <stop offset="0%" stop-color="#5C3920" stop-opacity="0.55"/>
-      <stop offset="40%" stop-color="#3D2818" stop-opacity="0.30"/>
-      <stop offset="100%" stop-color="#0A0A0B" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="cool-edge-left" cx="0%" cy="100%" r="60%">
-      <stop offset="0%" stop-color="#243A55" stop-opacity="0.45"/>
-      <stop offset="100%" stop-color="#0A0A0B" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="cool-edge-right" cx="100%" cy="100%" r="60%">
-      <stop offset="0%" stop-color="#243A55" stop-opacity="0.45"/>
-      <stop offset="100%" stop-color="#0A0A0B" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="amber-spot" cx="50%" cy="55%" r="22%">
-      <stop offset="0%" stop-color="#E8B547" stop-opacity="0.18"/>
+    <!-- Sky gradient: deep void at top → warm haze → bright amber horizon -->
+    <linearGradient id="sky" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#0A0A0B"/>
+      <stop offset="35%" stop-color="#1F1410"/>
+      <stop offset="62%" stop-color="#3D2818"/>
+      <stop offset="82%" stop-color="#8A5C2E"/>
+      <stop offset="100%" stop-color="#B07A38"/>
+    </linearGradient>
+    <radialGradient id="sun-glow" cx="50%" cy="78%" r="35%">
+      <stop offset="0%" stop-color="#F5C97D" stop-opacity="0.45"/>
+      <stop offset="60%" stop-color="#E8B547" stop-opacity="0.10"/>
       <stop offset="100%" stop-color="#0A0A0B" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="m-fill" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -23,16 +19,25 @@
     </linearGradient>
   </defs>
 
-  <!-- Deep void backdrop -->
-  <rect width="1600" height="900" fill="#0A0A0B"/>
+  <!-- Sky -->
+  <rect width="1600" height="900" fill="url(#sky)"/>
+  <rect width="1600" height="900" fill="url(#sun-glow)"/>
 
-  <!-- Atmospheric layers -->
-  <rect width="1600" height="900" fill="url(#warm-haze)"/>
-  <rect width="1600" height="900" fill="url(#cool-edge-left)"/>
-  <rect width="1600" height="900" fill="url(#cool-edge-right)"/>
-  <rect width="1600" height="900" fill="url(#amber-spot)"/>
+  <!-- Distant horizon range (Layer 4) — almost merged with sky -->
+  <path d="M 0 740 L 90 700 L 180 720 L 270 680 L 360 710 L 470 670 L 580 700 L 690 660 L 800 690 L 910 650 L 1020 690 L 1130 660 L 1240 700 L 1350 670 L 1460 700 L 1600 680 L 1600 900 L 0 900 Z"
+        fill="#5C3920" opacity="0.7"/>
 
-  <!-- Scattered stars -->
+  <!-- Mid-distance peaks (Layer 3) -->
+  <path d="M 0 800 L 110 760 L 220 790 L 340 740 L 460 780 L 590 720 L 720 770 L 870 730 L 1010 770 L 1140 740 L 1280 780 L 1410 750 L 1600 770 L 1600 900 L 0 900 Z"
+        fill="#3D2E22"/>
+
+  <!-- Foreground ridges (Layer 1) — frame the M -->
+  <path d="M 0 900 L 0 540 L 60 580 L 110 520 L 170 590 L 230 540 L 290 600 L 340 560 L 410 620 L 470 580 L 530 640 L 580 690 Z"
+        fill="#1F1612"/>
+  <path d="M 1600 900 L 1600 540 L 1540 580 L 1490 520 L 1430 590 L 1370 540 L 1310 600 L 1260 560 L 1190 620 L 1130 580 L 1070 640 L 1020 690 Z"
+        fill="#1F1612"/>
+
+  <!-- Scattered stars in upper sky -->
   <g fill="#F5F2EC" opacity="0.6">
     <circle cx="120" cy="160" r="0.8"/>
     <circle cx="280" cy="90" r="1.1"/>
@@ -45,27 +50,19 @@
     <circle cx="1430" cy="80" r="1.1"/>
     <circle cx="1540" cy="190" r="0.7"/>
     <circle cx="200" cy="320" r="0.6"/>
-    <circle cx="520" cy="380" r="0.9"/>
+    <circle cx="520" cy="380" r="0.6"/>
     <circle cx="880" cy="290" r="0.7"/>
     <circle cx="1240" cy="350" r="0.8"/>
     <circle cx="1480" cy="400" r="0.6"/>
-    <circle cx="80" cy="470" r="0.7"/>
-    <circle cx="360" cy="520" r="0.9"/>
-    <circle cx="700" cy="500" r="0.6"/>
-    <circle cx="1080" cy="540" r="0.8"/>
-    <circle cx="1380" cy="470" r="0.7"/>
   </g>
 
-  <!-- Stenciled M call-sign — squadron mark -->
-  <g transform="translate(800 470)" fill="url(#m-fill)" stroke="#E8B547" stroke-width="2" stroke-opacity="0.4">
+  <!-- Stenciled M call-sign — squadron mark, centered above the canyon V -->
+  <g transform="translate(800 440)" fill="url(#m-fill)" stroke="#E8B547" stroke-width="2" stroke-opacity="0.4">
     <path d="M -150 120 L -150 -120 L -90 -120 L 0 30 L 90 -120 L 150 -120 L 150 120 L 100 120 L 100 -40 L 25 90 L -25 90 L -100 -40 L -100 120 Z"/>
   </g>
 
   <!-- Mono micro-tag -->
-  <text x="800" y="640" text-anchor="middle" fill="#A09C95" font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="14" letter-spacing="3">
+  <text x="800" y="610" text-anchor="middle" fill="#A09C95" font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="14" letter-spacing="3">
     [ CALL SIGN: MAVERICH \\ V1.0 ]
   </text>
-
-  <!-- Distant horizon hairline -->
-  <line x1="0" y1="780" x2="1600" y2="780" stroke="#F5C97D" stroke-opacity="0.18" stroke-width="1"/>
 </svg>
