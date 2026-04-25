@@ -309,7 +309,7 @@ export function MountainLandscape() {
     n.repeat.set(2, 2);
     n.wrapS = n.wrapT = THREE.RepeatWrapping;
     n.needsUpdate = true;
-    return new THREE.MeshStandardMaterial({
+    const m = new THREE.MeshStandardMaterial({
       color: "#2F4A4A",
       roughness: 0.92,
       metalness: 0.0,
@@ -317,19 +317,55 @@ export function MountainLandscape() {
       normalScale: new THREE.Vector2(0.6, 0.6),
       flatShading: false,
     });
+    // Atmospheric scattering — distant ridges desaturate toward sky tint
+    // so they read as real aerial perspective, not flat color.
+    m.onBeforeCompile = (shader) => {
+      shader.uniforms.uSkyTint = { value: new THREE.Color("#7E9AAE") };
+      shader.uniforms.uScatterStart = { value: 80.0 };
+      shader.uniforms.uScatterEnd = { value: 260.0 };
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <fog_fragment>",
+        `
+          #include <fog_fragment>
+          float dist = length(vViewPosition);
+          float scatter = smoothstep(uScatterStart, uScatterEnd, dist);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, uSkyTint, scatter * 0.8);
+        `
+      );
+      shader.fragmentShader =
+        "uniform vec3 uSkyTint;\nuniform float uScatterStart;\nuniform float uScatterEnd;\n" +
+        shader.fragmentShader;
+    };
+    return m;
   }, [rockNormal]);
-  const horizonMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        // Warmest of the four — atmospheric perspective fades these
-        // peaks toward the horizon glow color.
-        color: "#3A5060",
-        roughness: 0.9,
-        metalness: 0.0,
-        flatShading: true,
-      }),
-    []
-  );
+  const horizonMat = useMemo(() => {
+    const m = new THREE.MeshStandardMaterial({
+      color: "#3A5060",
+      roughness: 0.9,
+      metalness: 0.0,
+      flatShading: true,
+    });
+    // Heavier scattering on the horizon range — these peaks should mostly
+    // dissolve into the sky color.
+    m.onBeforeCompile = (shader) => {
+      shader.uniforms.uSkyTint = { value: new THREE.Color("#9CB2C2") };
+      shader.uniforms.uScatterStart = { value: 180.0 };
+      shader.uniforms.uScatterEnd = { value: 320.0 };
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <fog_fragment>",
+        `
+          #include <fog_fragment>
+          float dist = length(vViewPosition);
+          float scatter = smoothstep(uScatterStart, uScatterEnd, dist);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, uSkyTint, scatter * 0.95);
+        `
+      );
+      shader.fragmentShader =
+        "uniform vec3 uSkyTint;\nuniform float uScatterStart;\nuniform float uScatterEnd;\n" +
+        shader.fragmentShader;
+    };
+    return m;
+  }, []);
 
   return (
     <group name="mountain-landscape">
