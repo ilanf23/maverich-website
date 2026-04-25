@@ -2,6 +2,7 @@
 
 import { motion, useMotionValueEvent, useScroll } from "motion/react";
 import { useState } from "react";
+import { useIntro } from "@/components/providers/intro-provider";
 
 const NAV_LINKS = [
   { label: "Hero", href: "#hero" },
@@ -10,31 +11,50 @@ const NAV_LINKS = [
   { label: "Contact", href: "#cta" },
 ];
 
+const REVEAL_EASE = [0.16, 1, 0.3, 1] as const;
+
 /**
  * SiteHeader — fixed overlay with the Maverich wordmark and anchor links.
- * Gains a subtle backdrop-blur + hairline border after the user scrolls past
- * 100px, so it recedes into the hero on first paint and hardens into a
- * chrome bar everywhere else.
+ *
+ * v2: wholly hidden during the intro animation. Fades in once
+ * IntroProvider reports phase === "complete" with the brief's 0.3s lead.
+ *
+ * After reveal, gains a subtle backdrop-blur + hairline border once the
+ * user scrolls past 100px, so it recedes into the hero on first paint
+ * and hardens into a chrome bar everywhere else.
  */
 export function SiteHeader() {
   const { scrollY } = useScroll();
   const [scrolled, setScrolled] = useState(false);
+  const { phase } = useIntro();
 
   useMotionValueEvent(scrollY, "change", (y) => {
     setScrolled(y > 100);
   });
 
+  const reveal = phase === "complete";
+
   return (
     <motion.header
       className="fixed inset-x-0 top-0 z-40"
+      initial={{ opacity: 0, y: -20 }}
       animate={{
+        opacity: reveal ? 1 : 0,
+        y: reveal ? 0 : -20,
         backgroundColor: scrolled ? "rgba(10, 10, 11, 0.7)" : "rgba(10, 10, 11, 0)",
         backdropFilter: scrolled ? "blur(12px)" : "blur(0px)",
         borderBottom: scrolled
           ? "1px solid var(--border-subtle)"
           : "1px solid transparent",
       }}
-      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+      transition={{
+        opacity: { duration: 0.8, ease: REVEAL_EASE, delay: reveal ? 0.3 : 0 },
+        y: { duration: 0.8, ease: REVEAL_EASE, delay: reveal ? 0.3 : 0 },
+        backgroundColor: { duration: 0.3, ease: [0.4, 0, 0.2, 1] },
+        backdropFilter: { duration: 0.3, ease: [0.4, 0, 0.2, 1] },
+        borderBottom: { duration: 0.3, ease: [0.4, 0, 0.2, 1] },
+      }}
+      style={{ pointerEvents: reveal ? "auto" : "none" }}
     >
       <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6">
         <a

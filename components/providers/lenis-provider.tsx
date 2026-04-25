@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { createContext, useContext, useEffect, useRef } from "react";
 import Lenis from "lenis";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -9,11 +9,28 @@ if (typeof window !== "undefined") {
   gsap.registerPlugin(ScrollTrigger);
 }
 
+/**
+ * LenisContext — exposes the live Lenis instance as a ref so consumers
+ * can lenis.stop() / lenis.start() (e.g. the hero intro scroll lock)
+ * without having to thread the ref down the tree by hand.
+ *
+ * The ref's `.current` is null until Lenis mounts. It can also be null
+ * permanently when the user has prefers-reduced-motion, in which case
+ * Lenis isn't constructed and consumers should fall back to their own
+ * native-scroll-locking strategy.
+ */
+type LenisRef = React.MutableRefObject<Lenis | null>;
+
+const LenisContext = createContext<LenisRef | null>(null);
+
+export function useLenis(): LenisRef | null {
+  return useContext(LenisContext);
+}
+
 export function LenisProvider({ children }: { children: React.ReactNode }) {
   const lenisRef = useRef<Lenis | null>(null);
 
   useEffect(() => {
-    // Honor prefers-reduced-motion — skip Lenis entirely if user opts out.
     const prefersReducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     ).matches;
@@ -28,9 +45,6 @@ export function LenisProvider({ children }: { children: React.ReactNode }) {
 
     lenisRef.current = lenis;
 
-    // Drive Lenis off GSAP's ticker so Lenis frames and ScrollTrigger's scrub
-    // share a clock. Without this, pinned sections can flicker during smooth
-    // scroll because they read positions from a different frame than Lenis.
     lenis.on("scroll", ScrollTrigger.update);
     const tick = (time: number) => lenis.raf(time * 1000);
     gsap.ticker.add(tick);
@@ -43,5 +57,7 @@ export function LenisProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  return <>{children}</>;
+  return (
+    <LenisContext.Provider value={lenisRef}>{children}</LenisContext.Provider>
+  );
 }

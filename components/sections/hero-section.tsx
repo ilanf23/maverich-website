@@ -1,41 +1,40 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
-import { useReducedMotion } from "motion/react";
-import { MonoTag, Reveal, ScrollScene } from "@/components/motion";
+import { MonoTag, Reveal } from "@/components/motion";
+import { useIntro } from "@/components/providers/intro-provider";
 
-// Dynamic-import the 3D scene with ssr: false so three/drei never enter the
-// server bundle. Suspense fallback is null — the canvas paints over the deep
-// background, so a flash-of-empty looks the same as the loaded first frame.
+// Dynamic-import the 3D scene with ssr: false so three/drei never enter
+// the server bundle. Suspense fallback is null — the canvas paints over
+// the deep background.
 const HeroScene = dynamic(
   () => import("@/components/3d/hero-scene").then((m) => m.HeroScene),
   { ssr: false, loading: () => null }
 );
 
+const REVEAL_EASE = [0.16, 1, 0.3, 1] as const;
+
 /**
- * Section 1 — Hero. Two-stage 3D scene (Phase 4):
+ * Section 1 — Hero. Phase 4 v2: auto-playing cinematic intro.
  *
- *   Stage 1 (0 → 60%): canyon approach. Camera dollies forward through a
- *   forested mountain valley at sunrise; jet is a tiny dot deep in the
- *   valley, growing as it threads between peaks toward the camera.
+ * On page load (desktop, motion-allowed) the canyon-approach + heroic
+ * pass-over plays automatically over ~11 seconds. Scroll is locked
+ * page-wide during that window (handled in IntroProvider). Once the
+ * intro completes, scroll unlocks and the hero text + header fade in
+ * with stagger.
  *
- *   Stage 2 (60 → 100%): heroic pass-over. Jet bursts out of the valley
- *   and transitions into the head-on close-up — wings spreading, twin
- *   afterburners blazing — until it flies directly over the camera.
- *
- * The scene pins for 3 viewports of scroll runway. HTML overlays sync to
- * scroll progress: headline 0–60%, tagline 60–90%, CTA 90–100%.
- *
- * Three render paths:
- *   1. Reduced-motion: static SVG fallback, headline still animates in.
- *   2. Mobile (<768px): static SVG fallback for v1 — Phase 9 polishes.
- *   3. Default: pinned ScrollScene drives the canvas via scroll progress.
+ * Fallback paths:
+ *   1. Reduced-motion: static SVG fallback, all UI shown immediately.
+ *   2. Mobile (<768px): static SVG fallback, all UI shown immediately.
+ *   3. Default: time-driven canvas + cinematic UI fade-in.
  */
 export function HeroSection() {
   const reduced = useReducedMotion();
   const [isMobile, setIsMobile] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const { progressRef, phase, skip, active } = useIntro();
 
   useEffect(() => {
     setMounted(true);
@@ -46,8 +45,6 @@ export function HeroSection() {
     return () => mql.removeEventListener("change", update);
   }, []);
 
-  // Render the static fallback for reduced-motion users, mobile, and the
-  // first server-paint (avoids hydration flash of an empty canvas slot).
   const useStaticFallback = reduced || isMobile || !mounted;
 
   if (useStaticFallback) {
@@ -56,7 +53,6 @@ export function HeroSection() {
         id="hero"
         className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 py-24"
       >
-        {/* Static fallback frame — same composition cues as the live scene. */}
         <div
           aria-hidden
           className="absolute inset-0"
@@ -72,30 +68,137 @@ export function HeroSection() {
     );
   }
 
-  return (
-    <section id="hero" className="relative">
-      <ScrollScene height={3}>
-        {(progress) => (
-          <>
-            {/* Canvas fills the pinned viewport behind the overlay. */}
-            <div className="absolute inset-0 z-0">
-              <HeroScene progress={progress} />
-            </div>
+  // The cinematic UI fades in once the intro hits "complete". On returning
+  // visits the hook short-circuits to complete, so the reveal happens
+  // within the first frame.
+  const reveal = phase === "complete";
 
-            {/* HTML overlay — three timed groups synced to scroll progress. */}
-            <div className="pointer-events-none absolute inset-0 z-10">
-              <HeroOverlayContent progress={progress} />
-            </div>
-          </>
-        )}
-      </ScrollScene>
+  return (
+    <section
+      id="hero"
+      className="relative h-screen w-full overflow-hidden"
+    >
+      {/* 3D canvas — fills the section. Driven by time-based progress
+          (read inside useFrame from the shared ref — no per-frame React
+          re-render). */}
+      <div className="absolute inset-0 z-0">
+        <HeroScene progressRef={progressRef} />
+      </div>
+
+      {/* Cinematic HTML overlay — only fades in after the intro completes. */}
+      <div className="pointer-events-none absolute inset-0 z-10">
+        <HeroOverlayCinematic reveal={reveal} />
+      </div>
+
+      {/* Skip control — bottom-right, only while the intro is playing.
+          Fades in shortly after the intro starts so it doesn't compete
+          with the establishing frame. */}
+      {active && phase === "playing" && <SkipIntroButton onSkip={skip} />}
     </section>
   );
 }
 
+function SkipIntroButton({ onSkip }: { onSkip: () => void }) {
+  return (
+    <motion.button
+      type="button"
+      onClick={onSkip}
+      className="type-mono-tag fixed bottom-6 right-6 z-50 rounded-full px-4 py-2"
+      style={{
+        color: "var(--ink-secondary)",
+        border: "1px solid var(--border-subtle)",
+        background: "var(--surface-glass)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+        pointerEvents: "auto",
+      }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 0.55 }}
+      whileHover={{ opacity: 1 }}
+      transition={{ duration: 0.6, ease: REVEAL_EASE, delay: 1.2 }}
+      aria-label="Skip cinematic intro"
+    >
+      SKIP INTRO →
+    </motion.button>
+  );
+}
+
 /**
- * HeroOverlayStatic — fallback path. Static composition, no scroll-driven
- * animation, but the same content beats as the live scene.
+ * HeroOverlayCinematic — staggered fade-in once `reveal` flips true.
+ * Initial state: everything hidden + slightly offset. Reveal: each group
+ * settles in over ~0.8s, ramped against the brief's 0.3 / 0.6 / 0.9 / 1.2
+ * delay schedule.
+ */
+function HeroOverlayCinematic({ reveal }: { reveal: boolean }) {
+  return (
+    <>
+      {/* Top: call-sign mono tag */}
+      <motion.div
+        className="absolute left-0 right-0 top-0 flex justify-center pt-12"
+        initial={{ opacity: 0, y: -16 }}
+        animate={reveal ? { opacity: 1, y: 0 } : { opacity: 0, y: -16 }}
+        transition={{ duration: 0.8, ease: REVEAL_EASE, delay: reveal ? 0.3 : 0 }}
+        style={{ pointerEvents: reveal ? "auto" : "none" }}
+      >
+        <MonoTag tone="amber">CALL SIGN: MAVERICH \\ V1.0</MonoTag>
+      </motion.div>
+
+      {/* Center: headline + subhead */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+        <motion.h1
+          className="type-display-1 max-w-[18ch]"
+          initial={{ opacity: 0, y: 30 }}
+          animate={reveal ? { opacity: 1, y: 0 } : { opacity: 0, y: 30 }}
+          transition={{ duration: 0.9, ease: REVEAL_EASE, delay: reveal ? 0.6 : 0 }}
+        >
+          Vibe-coded
+          <br />
+          <span style={{ color: "var(--accent-amber)" }}>
+            operating systems.
+          </span>
+        </motion.h1>
+
+        <motion.p
+          className="type-body-lg mt-8 max-w-2xl"
+          style={{ color: "var(--ink-secondary)" }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={reveal ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+          transition={{ duration: 0.8, ease: REVEAL_EASE, delay: reveal ? 0.9 : 0 }}
+        >
+          We build the software that runs the businesses that don&apos;t have
+          time to build software.
+        </motion.p>
+      </div>
+
+      {/* Bottom: CTA */}
+      <motion.div
+        className="absolute bottom-0 left-0 right-0 flex justify-center pb-16"
+        initial={{ opacity: 0, y: 20 }}
+        animate={reveal ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+        transition={{ duration: 0.8, ease: REVEAL_EASE, delay: reveal ? 1.2 : 0 }}
+        style={{ pointerEvents: reveal ? "auto" : "none" }}
+      >
+        <a
+          href="#products"
+          className="type-mono-tag inline-flex items-center gap-3 rounded-full px-5 py-3 transition-colors hover:bg-white/5"
+          style={{
+            color: "var(--accent-amber)",
+            border: "1px solid var(--border-subtle)",
+            background: "var(--surface-glass)",
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
+          }}
+        >
+          TAKE THE WINGMAN SEAT →
+        </a>
+      </motion.div>
+    </>
+  );
+}
+
+/**
+ * HeroOverlayStatic — fallback path. Mobile and reduced-motion users
+ * land here directly with all content visible — no intro to wait through.
  */
 function HeroOverlayStatic() {
   return (
@@ -150,143 +253,4 @@ function HeroOverlayStatic() {
       </Reveal>
     </div>
   );
-}
-
-/**
- * HeroOverlayContent — three timed groups, each scroll-linked to a window
- * of the 3-viewport runway:
- *
- *   • Headline group  → opacity ramps in over 0.0–0.10, holds, fades out 0.50–0.60
- *   • Tagline group   → fades in 0.60–0.70, fades out 0.85–0.92
- *   • CTA             → fades in 0.90–0.98
- *
- * Stacked absolutely so each group occupies the same vertical space and we
- * cross-dissolve between them rather than reflow. pointer-events: auto only
- * on the currently-visible group so links don't trap clicks invisibly.
- */
-function HeroOverlayContent({ progress }: { progress: number }) {
-  const headlineOpacity = clamp01(
-    progress < 0.1 ? progress / 0.1 : 1 - clamp01((progress - 0.5) / 0.1)
-  );
-  const taglineOpacity =
-    progress < 0.6
-      ? 0
-      : progress < 0.7
-        ? (progress - 0.6) / 0.1
-        : progress < 0.85
-          ? 1
-          : progress < 0.92
-            ? 1 - (progress - 0.85) / 0.07
-            : 0;
-  const ctaOpacity = clamp01((progress - 0.9) / 0.08);
-
-  // Mono call-sign tag at the very top — fades out around 0.7 with the
-  // headline so the tagline gets a clean stage.
-  const monoOpacity = clamp01(1 - (progress - 0.55) / 0.15);
-
-  // Slight upward lift on each group as it fades — adds a sense of motion
-  // without competing with the canvas action.
-  const headlineLift = -progress * 30;
-  const taglineLift = (1 - taglineOpacity) * 20;
-  const ctaLift = (1 - ctaOpacity) * 24;
-
-  return (
-    <>
-      {/* Top: call-sign mono tag */}
-      <div
-        className="pointer-events-auto absolute left-0 right-0 top-0 flex justify-center pt-12"
-        style={{ opacity: monoOpacity }}
-      >
-        <Reveal>
-          <MonoTag tone="amber">
-            CALL SIGN: MAVERICH \\ V1.0
-          </MonoTag>
-        </Reveal>
-      </div>
-
-      {/* Center stage — three stacked groups cross-dissolving between scenes. */}
-      <div className="absolute inset-0 flex items-center justify-center px-6">
-        <div className="relative w-full max-w-4xl text-center">
-          {/* Group 1 — value-prop headline (0 → 0.6) */}
-          <div
-            className="absolute inset-0 flex flex-col items-center justify-center"
-            style={{
-              opacity: headlineOpacity,
-              transform: `translateY(${headlineLift}px)`,
-              willChange: "transform, opacity",
-              pointerEvents: headlineOpacity > 0.1 ? "auto" : "none",
-            }}
-          >
-            <Reveal delay={0.15}>
-              <h1 className="type-display-1 max-w-[18ch]">
-                Vibe-coded
-                <br />
-                <span style={{ color: "var(--accent-amber)" }}>
-                  operating systems.
-                </span>
-              </h1>
-            </Reveal>
-
-            <Reveal delay={0.3}>
-              <p
-                className="type-body-lg mt-8 max-w-2xl"
-                style={{ color: "var(--ink-secondary)" }}
-              >
-                We build the software that runs the businesses that don&apos;t
-                have time to build software.
-              </p>
-            </Reveal>
-          </div>
-
-          {/* Group 2 — personality tagline (0.6 → 0.92) */}
-          <div
-            className="absolute inset-0 flex items-center justify-center"
-            style={{
-              opacity: taglineOpacity,
-              transform: `translateY(${taglineLift}px)`,
-              willChange: "transform, opacity",
-              pointerEvents: taglineOpacity > 0.1 ? "auto" : "none",
-            }}
-          >
-            <p
-              className="type-display-3 max-w-[20ch]"
-              style={{ color: "var(--accent-amber)" }}
-            >
-              Built by hand. <br />
-              Shipped on Friday.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom: CTA — appears after the jet has passed overhead */}
-      <div
-        className="absolute bottom-0 left-0 right-0 flex justify-center pb-16"
-        style={{
-          opacity: ctaOpacity,
-          transform: `translateY(${ctaLift}px)`,
-          willChange: "transform, opacity",
-          pointerEvents: ctaOpacity > 0.5 ? "auto" : "none",
-        }}
-      >
-        <a
-          href="#products"
-          className="type-mono-tag inline-flex items-center gap-3 rounded-full px-5 py-3 transition-colors hover:bg-white/5"
-          style={{
-            color: "var(--accent-amber)",
-            border: "1px solid var(--border-subtle)",
-            background: "var(--surface-glass)",
-            backdropFilter: "blur(8px)",
-            WebkitBackdropFilter: "blur(8px)",
-          }}
-        >
-          TAKE THE WINGMAN SEAT →
-        </a>
-      </div>
-    </>
-  );
-}
-
-function clamp01(n: number): number {
-  return Math.min(Math.max(n, 0), 1);
 }
