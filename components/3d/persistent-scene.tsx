@@ -4,7 +4,6 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Environment, PerspectiveCamera } from "@react-three/drei";
 import {
   Bloom,
-  DepthOfField,
   EffectComposer,
   GodRays,
   ToneMapping,
@@ -86,9 +85,9 @@ const INTRO_JET_POS: ReadonlyArray<[number, number, number]> = [
   [0, 4, -100],   // 0.20  approach
   [0, 3.7, -55],  // 0.40  mid-canyon
   [0, 3.7, -22],  // 0.60  emerging
-  [0, 3.8, -5],   // 0.75  close, large in frame
-  [0, 4, 2],      // 0.90  decelerating, in front of camera (cam @ z=9)
-  [0, 4, 4],      // 1.00  hover — matches SECTION_POSES[0] exactly
+  [0, 3.8, -8],   // 0.75  close, large in frame (heroic pass)
+  [0, 4, -9],     // 0.90  decelerating back to settle pose
+  [0, 4, -10],    // 1.00  hover — matches SECTION_POSES[0] exactly
 ];
 
 // Glow peaks during the heroic mid-approach (afterburners hot) and
@@ -180,25 +179,25 @@ const SECTION_KEYS = [0.0, 0.08, 0.22, 0.4, 0.55, 0.72, 0.88, 1.0] as const;
 const SECTION_POSES: readonly JetPose[] = [
   // 0.00 — intro just completed. Position + glow match INTRO_*[6] so
   //        the handoff is a no-op, no jump.
-  { position: [0, 4, 4], rotation: [0, 0, 0], glow: 2.6, scale: 1.4 },
+  { position: [0, 4, -10], rotation: [0, 0, 0], glow: 2.6, scale: 1.4 },
   // 0.08 — Section 1 (hero settled). Wingman drifts top-right of frame.
-  { position: [3, 4.5, 2], rotation: [0, -0.18, 0.06], glow: 2.4, scale: 1.4 },
+  { position: [3, 4.5, -12], rotation: [0, -0.18, 0.06], glow: 2.4, scale: 1.4 },
   // 0.22 — Section 2 (products). Right-side formation pose, gentle bank
   //        toward the right; nose still toward camera.
-  { position: [4.5, 3.8, 0], rotation: [-0.04, -0.28, 0.08], glow: 2.4, scale: 1.4 },
+  { position: [4.5, 3.8, -14], rotation: [-0.04, -0.28, 0.08], glow: 2.4, scale: 1.4 },
   // 0.40 — Section 3 (proof). Low-altitude track across the left side.
-  { position: [-5, 2.5, -2], rotation: [0.03, 0.32, -0.10], glow: 2.8, scale: 1.4 },
+  { position: [-5, 2.5, -16], rotation: [0.03, 0.32, -0.10], glow: 2.8, scale: 1.4 },
   // 0.55 — Section 4 (process). Afterburner — engines glow brighter.
   //        Slight pitch-up + small yaw so we still see the nose AND
   //        the burner halo wraps the silhouette. Brief: AFTERBURNER MODE.
-  { position: [0, 4.2, -3], rotation: [-0.14, -0.18, 0.04], glow: 4.6, scale: 1.4 },
+  { position: [0, 4.2, -17], rotation: [-0.14, -0.18, 0.04], glow: 4.6, scale: 1.4 },
   // 0.72 — Section 5 (founders). Calm hover on the left, banking back
   //        toward camera. RTB vibe.
-  { position: [-3, 4.8, 0], rotation: [0, 0.22, -0.05], glow: 2.2, scale: 1.4 },
+  { position: [-3, 4.8, -14], rotation: [0, 0.22, -0.05], glow: 2.2, scale: 1.4 },
   // 0.88 — Section 6 (CTA). Centered, inviting. Wingman seat reads.
-  { position: [0, 4, 1], rotation: [0, 0, 0], glow: 2.8, scale: 1.4 },
+  { position: [0, 4, -13], rotation: [0, 0, 0], glow: 2.8, scale: 1.4 },
   // 1.00 — Footer. Jet drifts up and slightly off — "RTB".
-  { position: [2, 5.5, 2], rotation: [0, -0.12, 0.03], glow: 2.0, scale: 1.4 },
+  { position: [2, 5.5, -12], rotation: [0, -0.12, 0.03], glow: 2.0, scale: 1.4 },
 ];
 
 function getJetStateForScroll(p: number): JetPose {
@@ -574,11 +573,10 @@ export function PersistentScene() {
             luminanceSmoothing={0.4}
             mipmapBlur
           />
-          <DepthOfField
-            focusDistance={0.04}
-            focalLength={0.05}
-            bokehScale={3}
-          />
+          {/* DepthOfField temporarily disabled — focusDistance was at the
+              near plane, blurring the jet for most of the scroll. The
+              hero needs sharp surface detail; mountains can stay sharp
+              too until we re-tune. */}
           <Vignette eskil={false} offset={0.12} darkness={0.7} />
           <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
         </EffectComposer>

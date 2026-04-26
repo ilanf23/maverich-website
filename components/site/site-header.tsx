@@ -4,19 +4,12 @@ import { motion, useMotionValueEvent, useScroll } from "motion/react";
 import { useState } from "react";
 import { useIntro } from "@/components/providers/intro-provider";
 
-const NAV_LINKS = [
-  { label: "Hero", href: "#hero" },
-  { label: "Work", href: "#proof" },
-  { label: "Process", href: "#process" },
-  { label: "Contact", href: "#cta" },
-];
-
 const REVEAL_EASE = [0.16, 1, 0.3, 1] as const;
 
 /**
- * SiteHeader — fixed overlay with the Maverich wordmark and anchor links.
+ * SiteHeader — fixed overlay with the Maverich wordmark.
  *
- * v2: hidden during the cinematic intro. Fades in 0.3s after IntroProvider
+ * Hidden during the cinematic intro. Fades in 0.3s after IntroProvider
  * reports phase === "complete" so the header lands as part of the staged
  * UI reveal, not before the cinematic resolves.
  *
@@ -57,7 +50,7 @@ export function SiteHeader() {
       }}
       style={{ pointerEvents: reveal ? "auto" : "none" }}
     >
-      <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6">
+      <div className="mx-auto flex h-16 w-full max-w-7xl items-center px-6">
         <a
           href="#hero"
           className="font-medium tracking-tight"
@@ -69,33 +62,6 @@ export function SiteHeader() {
           }}
         >
           Maverich
-        </a>
-
-        <nav className="hidden items-center gap-8 md:flex">
-          {NAV_LINKS.map((link) => (
-            <a
-              key={link.href}
-              href={link.href}
-              className="type-mono-tag transition-colors duration-200"
-              style={{ color: "var(--ink-secondary)" }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = "var(--accent-amber)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = "var(--ink-secondary)";
-              }}
-            >
-              {link.label}
-            </a>
-          ))}
-        </nav>
-
-        <a
-          href="#cta"
-          className="type-mono-tag md:hidden"
-          style={{ color: "var(--accent-amber)" }}
-        >
-          [ CONTACT ]
         </a>
       </div>
     </motion.header>

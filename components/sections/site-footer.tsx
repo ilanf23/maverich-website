@@ -34,18 +34,6 @@ export function SiteFooter() {
           Maverich
         </a>
 
-        <nav className="flex items-center gap-8">
-          <a href="#proof" className="type-mono-tag" style={{ color: "var(--ink-secondary)" }}>
-            Work
-          </a>
-          <a href="#process" className="type-mono-tag" style={{ color: "var(--ink-secondary)" }}>
-            Process
-          </a>
-          <a href="#cta" className="type-mono-tag" style={{ color: "var(--ink-secondary)" }}>
-            Contact
-          </a>
-        </nav>
-
         <MonoTag tone="subtle">v1.0 — SHIPPED APRIL 2026</MonoTag>
       </div>
 

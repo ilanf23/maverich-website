@@ -27,12 +27,6 @@ export function ProofSection() {
       className="relative flex min-h-screen flex-col justify-center px-6 py-32"
     >
       <div className="mx-auto w-full max-w-6xl">
-        <Reveal>
-          <MonoTag tone="muted" className="mb-6 block">
-            SECTION 03 \\ LOW PASS
-          </MonoTag>
-        </Reveal>
-
         <Reveal delay={0.1}>
           <h2 className="type-display-2 max-w-[20ch]">
             Operating systems that are{" "}

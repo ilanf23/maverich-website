@@ -3,9 +3,7 @@
 import { MonoTag, Reveal } from "@/components/motion";
 
 /**
- * Section 5 — Founder Note / Return to Base. Editorial single-column layout.
- * Phase 9 will swap the avatar placeholders for real B&W photography of
- * Ilan, Adam, and Aidan.
+ * Section 5 — Founder Note. Editorial single-column layout.
  */
 export function FoundersSection() {
   return (
@@ -14,15 +12,9 @@ export function FoundersSection() {
       className="relative flex min-h-screen flex-col justify-center px-6 py-32"
     >
       <div className="mx-auto w-full max-w-2xl">
-        <Reveal>
-          <MonoTag tone="muted" className="mb-6 block">
-            SECTION 05 \\ RETURN TO BASE
-          </MonoTag>
-        </Reveal>
-
         <Reveal delay={0.1}>
           <h2 className="type-display-3">
-            Three brothers.{" "}
+            One pilot.{" "}
             <span style={{ color: "var(--accent-amber)" }}>One runway.</span>
           </h2>
         </Reveal>
@@ -33,22 +25,22 @@ export function FoundersSection() {
             style={{ color: "var(--ink-secondary)" }}
           >
             <p>
-              We started Maverich because we kept watching good operators drown
+              I started Maverich because I kept watching good operators drown
               in software that wasn&apos;t built for them. Generic SaaS. Brittle
               glue scripts. Dashboards that measured everything except the
               thing that actually moved the business.
             </p>
             <p>
-              So we build the software ourselves, one operator at a time. We
-              ship fast because we&apos;re small, and we stay small because we
-              ship fast. Idea Monday. Live Friday. Iterating Saturday.
+              So I build the software myself, one operator at a time. I ship
+              fast because I&apos;m small, and I stay small because I ship
+              fast. Idea Monday. Live Friday. Iterating Saturday.
             </p>
             <p>
               If it feels a little cinematic, that&apos;s on purpose. The site
               is the demo. The software is the promise.
             </p>
             <p style={{ color: "var(--ink-primary)" }}>
-              — Ilan, Adam, Aidan
+              — Ilan
             </p>
           </div>
         </Reveal>

@@ -37,10 +37,6 @@ export function ProcessSection() {
               />
 
               <div className="relative z-10 flex flex-col items-center">
-                <MonoTag tone="muted" className="mb-10 block">
-                  SECTION 04 \\ FULL AFTERBURNER
-                </MonoTag>
-
                 {BEATS.map((beat, i) => {
                   const isActive = active === i;
                   return (

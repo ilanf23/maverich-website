@@ -78,12 +78,6 @@ export function HeroSection() {
 function HeroOverlayStatic() {
   return (
     <div className="relative z-10 flex flex-col items-center">
-      <Reveal>
-        <MonoTag tone="amber" className="mb-12 block">
-          CALL SIGN: MAVERICH \\ V1.0
-        </MonoTag>
-      </Reveal>
-
       <Reveal delay={0.15}>
         <h1 className="type-display-1 max-w-[18ch] text-center">
           Vibe-coded
@@ -139,17 +133,6 @@ function HeroOverlayStatic() {
 function HeroOverlayCinematic({ reveal }: { reveal: boolean }) {
   return (
     <>
-      {/* Top: call-sign mono tag */}
-      <motion.div
-        className="absolute left-0 right-0 top-0 flex justify-center pt-24"
-        initial={{ opacity: 0, y: -16 }}
-        animate={reveal ? { opacity: 1, y: 0 } : { opacity: 0, y: -16 }}
-        transition={{ duration: 0.8, ease: REVEAL_EASE, delay: reveal ? 0.3 : 0 }}
-        style={{ pointerEvents: reveal ? "auto" : "none" }}
-      >
-        <MonoTag tone="amber">CALL SIGN: MAVERICH \\ V1.0</MonoTag>
-      </motion.div>
-
       {/* Center: headline + subhead */}
       <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
         <motion.h1

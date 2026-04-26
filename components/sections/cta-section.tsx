@@ -13,12 +13,6 @@ export function CtaSection() {
       className="relative flex min-h-screen flex-col items-center justify-center px-6 py-32 text-center"
     >
       <div className="mx-auto w-full max-w-3xl">
-        <Reveal>
-          <MonoTag tone="muted" className="mb-6 block">
-            SECTION 06 \\ OPEN SEAT
-          </MonoTag>
-        </Reveal>
-
         <Reveal delay={0.1}>
           <h2 className="type-display-2">
             Take the{" "}
